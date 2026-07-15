@@ -10,7 +10,7 @@ import {
   validateTpSl,
   type SizingMode,
 } from "./risk";
-import { sendDiscord } from "./discord";
+import { notifyTradeOpened } from "./discord";
 import {
   parseEnabledStrategies,
   scanStrategies,
@@ -367,10 +367,37 @@ export async function executeTrade(input: ExecuteTradeInput) {
       },
     });
 
-    await sendDiscord(
-      discordWebhook,
-      `[${input.source.toUpperCase()}] ${input.side} ${input.instrument} units=${Math.abs(units)} TP=${input.takeProfit} SL=${input.stopLoss}`,
+    const balance = parseFloat(String(account.balance ?? account.NAV ?? 0));
+    const riskAmt = plannedRiskAmount(
+      Math.abs(units),
+      fillPrice,
+      input.stopLoss,
     );
+    const rr = riskRewardRatio(
+      fillPrice,
+      input.takeProfit,
+      input.stopLoss,
+      input.side,
+    );
+
+    await notifyTradeOpened(discordWebhook, {
+      source: input.source,
+      instrument: input.instrument,
+      side: input.side,
+      units: Math.abs(units),
+      entryPrice: fillPrice,
+      takeProfit: input.takeProfit,
+      stopLoss: input.stopLoss,
+      timeframe: input.timeframe,
+      confidence: input.confidence,
+      rationale: input.rationale,
+      oandaTradeId: tradeId || null,
+      oandaOrderId: fill?.id || result.orderCreateTransaction?.id || null,
+      riskAmount: riskAmt,
+      rr,
+      balance,
+      sizingMode: settings.sizingMode,
+    });
 
     return { journal, result, fillPrice, units };
   } catch (e) {
