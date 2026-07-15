@@ -12,6 +12,19 @@ export interface TradeSignal {
   entryHint: number | null;
 }
 
+/** Default: 1.5-flash — fast, better free-tier headroom than 2.0-flash for many keys. */
+export const DEFAULT_GEMINI_MODEL = "gemini-1.5-flash";
+
+export const GEMINI_MODEL_OPTIONS = [
+  { value: "gemini-1.5-flash", label: "1.5 Flash (recommended)" },
+  { value: "gemini-1.5-pro", label: "1.5 Pro (heavier / slower)" },
+  { value: "gemini-2.0-flash", label: "2.0 Flash" },
+] as const;
+
+function resolveModel(model?: string | null): string {
+  return (model && model.trim()) || process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL;
+}
+
 function stripJson(text: string): string {
   const trimmed = text.trim();
   const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -29,10 +42,12 @@ export async function analyzePair(params: {
   candles: Candle[];
   higherTfCandles?: Candle[];
   accountBalance?: number;
+  model?: string | null;
 }): Promise<TradeSignal> {
   const { apiKey, instrument, timeframe, candles, higherTfCandles, accountBalance } =
     params;
   const ai = new GoogleGenAI({ apiKey });
+  const model = resolveModel(params.model);
 
   const summarize = (cs: Candle[], n = 40) =>
     cs.slice(-n).map((c) => ({
@@ -76,7 +91,7 @@ Respond ONLY with JSON:
 }`;
 
   const response = await ai.models.generateContent({
-    model: "gemini-2.0-flash",
+    model,
     contents: prompt,
   });
 
@@ -103,10 +118,11 @@ export async function postTradeLesson(params: {
   side: string;
   realizedPl: number;
   rationale?: string | null;
+  model?: string | null;
 }): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: params.apiKey });
   const response = await ai.models.generateContent({
-    model: "gemini-2.0-flash",
+    model: resolveModel(params.model),
     contents: `Write a 2-sentence trading lesson after this closed forex trade.
 Instrument: ${params.instrument}
 Side: ${params.side}

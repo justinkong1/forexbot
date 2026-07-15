@@ -35,6 +35,7 @@ export async function GET() {
     discordMasked,
     hasOandaToken: !!s.oandaTokenEnc,
     hasGeminiKey: !!s.geminiKeyEnc,
+    geminiModel: s.geminiModel || "gemini-1.5-flash",
     hasDiscord: !!s.discordWebhookEnc,
     riskPercent: s.riskPercent,
     maxUnits: s.maxUnits,
@@ -69,6 +70,7 @@ export async function PUT(req: Request) {
   const data: Record<string, unknown> = {
     oandaAccountId: body.oandaAccountId ?? s.oandaAccountId,
     oandaEnv,
+    geminiModel: String(body.geminiModel || s.geminiModel || "gemini-1.5-flash"),
     riskPercent: Math.min(5, Math.max(0.1, Number(body.riskPercent ?? s.riskPercent))),
     maxUnits: Math.max(1, Number(body.maxUnits ?? s.maxUnits)),
     minRiskReward: Math.max(0.5, Number(body.minRiskReward ?? s.minRiskReward)),

@@ -5,7 +5,7 @@ import { postTradeLesson } from "./ai";
 
 /** Match OANDA closed trades to open journal rows and update P/L */
 export async function syncClosedTrades() {
-  const { oanda, geminiKey } = await loadCredentials();
+  const { oanda, geminiKey, settings } = await loadCredentials();
   if (!oanda) return { updated: 0 };
 
   const openRows = await prisma.tradeJournal.findMany({
@@ -36,6 +36,7 @@ export async function syncClosedTrades() {
           side: row.side || "",
           realizedPl: pl,
           rationale: row.rationale,
+          model: settings.geminiModel,
         });
       } catch {
         lesson = null;

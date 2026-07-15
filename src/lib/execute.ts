@@ -64,6 +64,7 @@ export async function analyzeInstrument(params: {
     candles,
     higherTfCandles,
     accountBalance: balance,
+    model: settings.geminiModel,
   });
 
   const lastClose = candles[candles.length - 1]?.close ?? 0;
