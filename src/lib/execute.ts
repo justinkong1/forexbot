@@ -1,20 +1,14 @@
 import { prisma } from "./db";
 import { loadCredentials } from "./credentials";
 import { assertTradingAllowed } from "./limits";
-import {
-  getAccountSummary,
-  getCandles,
-  getOpenTrades,
-  getPositionForInstrument,
-  placeMarketOrder,
-  type CandleGranularity,
-} from "./oanda";
 import { analyzePair, type TradeSignal } from "./ai";
 import {
+  calculateFullBalanceUnits,
   calculateUnits,
   plannedRiskAmount,
   riskRewardRatio,
   validateTpSl,
+  type SizingMode,
 } from "./risk";
 import { sendDiscord } from "./discord";
 import {
@@ -22,6 +16,16 @@ import {
   scanStrategies,
   type StrategySignal,
 } from "./strategies";
+import {
+  getAccountSummary,
+  getCandles,
+  getInstrumentDetails,
+  getOpenTrades,
+  getPositionForInstrument,
+  placeMarketOrder,
+  type CandleGranularity,
+  type OandaCredentials,
+} from "./oanda";
 
 export type TradeSource = "manual" | "auto" | "strategy";
 
@@ -38,31 +42,85 @@ export interface ExecuteTradeInput {
   entryPrice?: number;
 }
 
-function sizeFromSignal(params: {
-  balance: number;
-  riskPercent: number;
-  maxUnits: number;
+async function resolveUnits(params: {
+  oanda: OandaCredentials;
+  settings: {
+    sizingMode: string;
+    riskPercent: number;
+    maxUnits: number;
+    balanceUtilization: number;
+  };
+  side: "BUY" | "SELL";
   entry: number;
-  signal: { bias: "BUY" | "SELL" | "WAIT"; takeProfit: number | null; stopLoss: number | null };
+  stopLoss: number;
+  account: Record<string, unknown>;
+  instrument: string;
+}): Promise<{ units: number; riskAmount: number; mode: SizingMode }> {
+  const mode = (params.settings.sizingMode === "risk_sl"
+    ? "risk_sl"
+    : "full_balance") as SizingMode;
+  const balance = parseFloat(
+    String(params.account.balance ?? params.account.NAV ?? 0),
+  );
+  const marginAvailable = parseFloat(
+    String(params.account.marginAvailable ?? params.account.NAV ?? balance),
+  );
+  const currency = String(params.account.currency || "USD");
+
+  let units: number;
+  if (mode === "full_balance") {
+    const details = await getInstrumentDetails(params.oanda, params.instrument);
+    if (!details) throw new Error("Could not load instrument margin details");
+    const marginRate = parseFloat(details.marginRate);
+    const maxOrder = Number(details.maximumOrderUnits || 0);
+    units = calculateFullBalanceUnits({
+      marginAvailable,
+      marginRate,
+      entryPrice: params.entry,
+      accountCurrency: currency,
+      instrument: params.instrument,
+      utilizationPercent: params.settings.balanceUtilization ?? 100,
+      side: params.side,
+      tradeableUnits: maxOrder > 0 ? maxOrder : null,
+    });
+  } else {
+    units = calculateUnits({
+      equity: balance,
+      riskPercent: params.settings.riskPercent,
+      entryPrice: params.entry,
+      stopLoss: params.stopLoss,
+      maxUnits: params.settings.maxUnits,
+      side: params.side,
+    });
+  }
+
+  const riskAmount = plannedRiskAmount(
+    Math.abs(units),
+    params.entry,
+    params.stopLoss,
+  );
+  return { units, riskAmount, mode };
+}
+
+function sizeFromSignalSync(params: {
+  suggestedUnits: number;
+  entry: number;
+  signal: {
+    bias: "BUY" | "SELL" | "WAIT";
+    takeProfit: number | null;
+    stopLoss: number | null;
+  };
 }) {
-  let suggestedUnits: number | null = null;
   let riskAmount: number | null = null;
   let rr: number | null = null;
-  const { signal, entry, balance } = params;
+  const { signal, entry, suggestedUnits } = params;
   if (
     signal.bias !== "WAIT" &&
     signal.takeProfit != null &&
     signal.stopLoss != null &&
-    entry > 0
+    entry > 0 &&
+    suggestedUnits !== 0
   ) {
-    suggestedUnits = calculateUnits({
-      equity: balance,
-      riskPercent: params.riskPercent,
-      entryPrice: entry,
-      stopLoss: signal.stopLoss,
-      maxUnits: params.maxUnits,
-      side: signal.bias,
-    });
     riskAmount = plannedRiskAmount(
       Math.abs(suggestedUnits),
       entry,
@@ -115,21 +173,46 @@ export async function analyzeInstrument(params: {
 
   const lastClose = candles[candles.length - 1]?.close ?? 0;
   const entry = signal.entryHint || lastClose;
-  const sized = sizeFromSignal({
-    balance,
-    riskPercent: settings.riskPercent,
-    maxUnits: settings.maxUnits,
-    entry,
-    signal,
-  });
+  let suggestedUnits: number | null = null;
+  let riskAmount: number | null = null;
+  let rr: number | null = null;
+  let sizingMode: SizingMode = "full_balance";
+
+  if (
+    signal.bias !== "WAIT" &&
+    signal.takeProfit != null &&
+    signal.stopLoss != null
+  ) {
+    const sized = await resolveUnits({
+      oanda,
+      settings,
+      side: signal.bias,
+      entry,
+      stopLoss: signal.stopLoss,
+      account,
+      instrument: params.instrument,
+    });
+    suggestedUnits = sized.units;
+    riskAmount = sized.riskAmount;
+    sizingMode = sized.mode;
+    rr = riskRewardRatio(
+      entry,
+      signal.takeProfit,
+      signal.stopLoss,
+      signal.bias,
+    );
+  }
 
   return {
     signal,
     entry,
-    ...sized,
+    suggestedUnits,
+    riskAmount,
+    rr,
     lastClose,
     balance,
     candles,
+    sizingMode,
   };
 }
 
@@ -156,17 +239,26 @@ export async function analyzeStrategies(params: {
   let suggestedUnits: number | null = null;
   let riskAmount: number | null = null;
   let rr: number | null = null;
-  if (scan.consensus) {
-    const sized = sizeFromSignal({
-      balance,
-      riskPercent: settings.riskPercent,
-      maxUnits: settings.maxUnits,
+  let sizingMode: SizingMode = "full_balance";
+  if (scan.consensus && scan.consensus.bias !== "WAIT") {
+    const sized = await resolveUnits({
+      oanda,
+      settings,
+      side: scan.consensus.bias,
+      entry: scan.consensus.entry,
+      stopLoss: scan.consensus.stopLoss!,
+      account,
+      instrument: params.instrument,
+    });
+    const packed = sizeFromSignalSync({
+      suggestedUnits: sized.units,
       entry: scan.consensus.entry,
       signal: scan.consensus,
     });
-    suggestedUnits = sized.suggestedUnits;
-    riskAmount = sized.riskAmount;
-    rr = sized.rr;
+    suggestedUnits = packed.suggestedUnits;
+    riskAmount = packed.riskAmount;
+    rr = packed.rr;
+    sizingMode = sized.mode;
   }
 
   return {
@@ -177,6 +269,7 @@ export async function analyzeStrategies(params: {
     balance,
     lastClose: scan.entry,
     enabledStrategies: enabled,
+    sizingMode,
   };
 }
 
@@ -203,7 +296,6 @@ export async function executeTrade(input: ExecuteTradeInput) {
   }
 
   const account = await getAccountSummary(oanda);
-  const balance = parseFloat(String(account.balance ?? account.NAV ?? 0));
   const entry =
     input.entryPrice ??
     (await getCandles(oanda, input.instrument, "M5", 2)).at(-1)?.close;
@@ -220,21 +312,23 @@ export async function executeTrade(input: ExecuteTradeInput) {
 
   let units = input.units;
   if (units == null || units === 0) {
-    units = calculateUnits({
-      equity: balance,
-      riskPercent: settings.riskPercent,
-      entryPrice: entry,
-      stopLoss: input.stopLoss,
-      maxUnits: settings.maxUnits,
+    const sized = await resolveUnits({
+      oanda,
+      settings,
       side: input.side,
+      entry,
+      stopLoss: input.stopLoss,
+      account,
+      instrument: input.instrument,
     });
+    units = sized.units;
   } else {
-    // Normalize sign
     units =
-      input.side === "SELL"
-        ? -Math.abs(units)
-        : Math.abs(units);
-    if (Math.abs(units) > settings.maxUnits) {
+      input.side === "SELL" ? -Math.abs(units) : Math.abs(units);
+    if (
+      settings.sizingMode === "risk_sl" &&
+      Math.abs(units) > settings.maxUnits
+    ) {
       throw new Error(`Units exceed maxUnits cap (${settings.maxUnits})`);
     }
   }

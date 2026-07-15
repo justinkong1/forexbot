@@ -82,6 +82,7 @@ export async function getInstrumentDetails(
       marginRate: string;
       pipLocation: number;
       minimumTradeSize: string;
+      maximumOrderUnits?: string;
     }>;
   };
   return data.instruments[0] ?? null;

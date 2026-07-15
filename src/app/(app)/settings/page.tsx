@@ -15,6 +15,8 @@ interface SettingsState {
   riskPercent: number;
   maxUnits: number;
   minRiskReward: number;
+  sizingMode: string;
+  balanceUtilization: number;
   autoTradeEnabled: boolean;
   autoWatchlist: string;
   autoTimeframe: string;
@@ -47,12 +49,14 @@ const empty: SettingsState = {
   riskPercent: 1,
   maxUnits: 10000,
   minRiskReward: 1,
+  sizingMode: "full_balance",
+  balanceUtilization: 100,
   autoTradeEnabled: false,
   autoWatchlist: "EUR_USD,USD_JPY,GBP_USD",
   autoTimeframe: "H1",
   autoIntervalMinutes: 60,
   autoMinConfidence: 0.7,
-  maxOpenTrades: 3,
+  maxOpenTrades: 1,
   autoMode: "strategy",
   enabledStrategies: "ema_cross,rsi_reversion,macd_cross,bb_bounce",
   strategyMinVotes: 1,
@@ -248,33 +252,72 @@ export default function SettingsPage() {
         </section>
 
         <section className="panel space-y-4 p-5 md:p-6">
-          <h2 className="display text-xl">Risk</h2>
-          <div className="grid gap-4 md:grid-cols-3">
+          <h2 className="display text-xl">Risk / size</h2>
+          <div>
+            <label className="label">Position sizing</label>
+            <select
+              className="select"
+              value={s.sizingMode}
+              onChange={(e) => setS({ ...s, sizingMode: e.target.value })}
+            >
+              <option value="full_balance">
+                Full balance (100% margin → units for the pair)
+              </option>
+              <option value="risk_sl">
+                Risk % of equity at stop-loss
+              </option>
+            </select>
+            <p className="mt-1 text-xs text-[var(--ink-soft)]">
+              Full balance uses your available margin and the pair&apos;s
+              margin rate so one trade can deploy ~100% of the account.
+              Keep max open trades at 1.
+            </p>
+          </div>
+          {s.sizingMode === "full_balance" ? (
             <div>
-              <label className="label">Risk % / trade</label>
+              <label className="label">Balance utilization %</label>
               <input
                 className="input mono"
                 type="number"
-                step="0.1"
-                min="0.1"
-                max="5"
-                value={s.riskPercent}
+                step="1"
+                min="1"
+                max="100"
+                value={s.balanceUtilization}
                 onChange={(e) =>
-                  setS({ ...s, riskPercent: Number(e.target.value) })
+                  setS({ ...s, balanceUtilization: Number(e.target.value) })
                 }
               />
             </div>
-            <div>
-              <label className="label">Max units</label>
-              <input
-                className="input mono"
-                type="number"
-                value={s.maxUnits}
-                onChange={(e) =>
-                  setS({ ...s, maxUnits: Number(e.target.value) })
-                }
-              />
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="label">Risk % / trade (at SL)</label>
+                <input
+                  className="input mono"
+                  type="number"
+                  step="0.1"
+                  min="0.1"
+                  max="100"
+                  value={s.riskPercent}
+                  onChange={(e) =>
+                    setS({ ...s, riskPercent: Number(e.target.value) })
+                  }
+                />
+              </div>
+              <div>
+                <label className="label">Max units cap</label>
+                <input
+                  className="input mono"
+                  type="number"
+                  value={s.maxUnits}
+                  onChange={(e) =>
+                    setS({ ...s, maxUnits: Number(e.target.value) })
+                  }
+                />
+              </div>
             </div>
+          )}
+          <div className="grid gap-4 md:grid-cols-2">
             <div>
               <label className="label">Min R:R</label>
               <input
@@ -284,6 +327,18 @@ export default function SettingsPage() {
                 value={s.minRiskReward}
                 onChange={(e) =>
                   setS({ ...s, minRiskReward: Number(e.target.value) })
+                }
+              />
+            </div>
+            <div>
+              <label className="label">Max open trades</label>
+              <input
+                className="input mono"
+                type="number"
+                min={1}
+                value={s.maxOpenTrades}
+                onChange={(e) =>
+                  setS({ ...s, maxOpenTrades: Number(e.target.value) })
                 }
               />
             </div>
@@ -529,18 +584,6 @@ export default function SettingsPage() {
                 value={s.autoMinConfidence}
                 onChange={(e) =>
                   setS({ ...s, autoMinConfidence: Number(e.target.value) })
-                }
-              />
-            </div>
-            <div>
-              <label className="label">Max open trades</label>
-              <input
-                className="input mono"
-                type="number"
-                min={1}
-                value={s.maxOpenTrades}
-                onChange={(e) =>
-                  setS({ ...s, maxOpenTrades: Number(e.target.value) })
                 }
               />
             </div>
