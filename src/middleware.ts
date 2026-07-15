@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getIronSession } from "iron-session";
-import { sessionOptions, type SessionData } from "@/lib/auth";
+import { getSessionFromRequest } from "@/lib/auth";
 
 const publicPaths = ["/login", "/api/auth/login"];
 
@@ -20,11 +19,7 @@ export async function middleware(request: NextRequest) {
   }
 
   const response = NextResponse.next();
-  const session = await getIronSession<SessionData>(
-    request,
-    response,
-    sessionOptions,
-  );
+  const session = await getSessionFromRequest(request, response);
 
   if (!session.isLoggedIn) {
     if (pathname.startsWith("/api/")) {

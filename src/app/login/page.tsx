@@ -1,11 +1,9 @@
 "use client";
 
-import { FormEvent, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense } from "react";
+import { FormEvent, useState, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 
 function LoginForm() {
-  const router = useRouter();
   const params = useSearchParams();
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
@@ -20,12 +18,14 @@ function LoginForm() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ username, password }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Login failed");
-      router.push(params.get("from") || "/dashboard");
-      router.refresh();
+      // Full navigation so the session cookie is always sent on the next page
+      const next = params.get("from") || "/dashboard";
+      window.location.assign(next);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
