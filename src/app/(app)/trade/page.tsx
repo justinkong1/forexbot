@@ -380,13 +380,21 @@ export default function TradePage() {
                 </div>
               </div>
               <div>
-                <div className="label">$ risk</div>
+                <div className="label">$ at SL</div>
                 <div className="mono">
                   {pending.riskAmount != null
                     ? pending.riskAmount.toFixed(2)
                     : "—"}
                 </div>
               </div>
+              {pending.suggestedUnits != null && (
+                <div className="col-span-2">
+                  <div className="label">Suggested units (from sizing mode)</div>
+                  <div className="mono text-lg font-semibold">
+                    {Math.abs(pending.suggestedUnits)}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

@@ -40,6 +40,8 @@ export async function GET() {
     riskPercent: s.riskPercent,
     maxUnits: s.maxUnits,
     minRiskReward: s.minRiskReward,
+    sizingMode: s.sizingMode || "full_balance",
+    balanceUtilization: s.balanceUtilization ?? 100,
     autoTradeEnabled: s.autoTradeEnabled,
     autoWatchlist: s.autoWatchlist,
     autoTimeframe: s.autoTimeframe,
@@ -76,9 +78,18 @@ export async function PUT(req: Request) {
     oandaAccountId: body.oandaAccountId ?? s.oandaAccountId,
     oandaEnv,
     geminiModel: String(body.geminiModel || s.geminiModel || "gemini-2.5-flash"),
-    riskPercent: Math.min(5, Math.max(0.1, Number(body.riskPercent ?? s.riskPercent))),
+    riskPercent: Math.min(
+      100,
+      Math.max(0.1, Number(body.riskPercent ?? s.riskPercent)),
+    ),
     maxUnits: Math.max(1, Number(body.maxUnits ?? s.maxUnits)),
     minRiskReward: Math.max(0.5, Number(body.minRiskReward ?? s.minRiskReward)),
+    sizingMode:
+      body.sizingMode === "risk_sl" ? "risk_sl" : "full_balance",
+    balanceUtilization: Math.min(
+      100,
+      Math.max(1, Number(body.balanceUtilization ?? s.balanceUtilization ?? 100)),
+    ),
     autoTradeEnabled: !!body.autoTradeEnabled,
     autoWatchlist: String(body.autoWatchlist ?? s.autoWatchlist),
     autoTimeframe: String(body.autoTimeframe ?? s.autoTimeframe),
