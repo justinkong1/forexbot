@@ -46,6 +46,11 @@ export async function GET() {
     autoIntervalMinutes: s.autoIntervalMinutes,
     autoMinConfidence: s.autoMinConfidence,
     maxOpenTrades: s.maxOpenTrades,
+    autoMode: s.autoMode || "strategy",
+    enabledStrategies: s.enabledStrategies,
+    strategyMinVotes: s.strategyMinVotes,
+    atrSlMult: s.atrSlMult,
+    atrTpMult: s.atrTpMult,
     liveAcknowledged: s.liveAcknowledged,
     liveAutoAcknowledged: s.liveAutoAcknowledged,
     dailyMaxLoss: s.dailyMaxLoss,
@@ -86,6 +91,24 @@ export async function PUT(req: Request) {
       Math.max(0, Number(body.autoMinConfidence ?? s.autoMinConfidence)),
     ),
     maxOpenTrades: Math.max(1, Number(body.maxOpenTrades ?? s.maxOpenTrades)),
+    autoMode: ["strategy", "ai", "both"].includes(String(body.autoMode))
+      ? String(body.autoMode)
+      : s.autoMode || "strategy",
+    enabledStrategies: String(
+      body.enabledStrategies ?? s.enabledStrategies,
+    ),
+    strategyMinVotes: Math.max(
+      1,
+      Math.min(4, Number(body.strategyMinVotes ?? s.strategyMinVotes ?? 1)),
+    ),
+    atrSlMult: Math.max(
+      0.5,
+      Number(body.atrSlMult ?? s.atrSlMult ?? 1.5),
+    ),
+    atrTpMult: Math.max(
+      0.5,
+      Number(body.atrTpMult ?? s.atrTpMult ?? 2.5),
+    ),
     liveAcknowledged: !!body.liveAcknowledged || s.liveAcknowledged,
     liveAutoAcknowledged:
       !!body.liveAutoAcknowledged || s.liveAutoAcknowledged,

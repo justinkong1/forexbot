@@ -14,18 +14,32 @@ interface Signal {
   rationale: string;
   takeProfit: number | null;
   stopLoss: number | null;
-  entryHint: number | null;
+  name?: string;
+  id?: string;
 }
 
-interface Analysis {
+interface StrategyRow {
+  id: string;
+  name: string;
+  bias: "BUY" | "SELL" | "WAIT";
+  confidence: number;
+  rationale: string;
+  takeProfit: number | null;
+  stopLoss: number | null;
+}
+
+interface PendingTrade {
+  source: "manual" | "strategy";
+  title: string;
   signal: Signal;
   entry: number;
+  lastClose: number;
   suggestedUnits: number | null;
   riskAmount: number | null;
   rr: number | null;
-  lastClose: number;
-  balance: number;
-  limits?: { halted: boolean; message: string | null };
+  strategyRows?: StrategyRow[];
+  buyVotes?: number;
+  sellVotes?: number;
 }
 
 export default function TradePage() {
@@ -33,11 +47,12 @@ export default function TradePage() {
   const [instrument, setInstrument] = useState("EUR_USD");
   const [timeframe, setTimeframe] = useState("H1");
   const [candles, setCandles] = useState<ChartCandle[]>([]);
-  const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [pending, setPending] = useState<PendingTrade | null>(null);
   const [tp, setTp] = useState("");
   const [sl, setSl] = useState("");
   const [units, setUnits] = useState("");
   const [loadingChart, setLoadingChart] = useState(false);
+  const [scanning, setScanning] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [placing, setPlacing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -86,11 +101,64 @@ export default function TradePage() {
     void loadCandles();
   }, [loadCandles]);
 
-  async function analyze() {
+  function applyPending(p: PendingTrade) {
+    setPending(p);
+    if (p.signal.takeProfit != null) setTp(String(p.signal.takeProfit));
+    if (p.signal.stopLoss != null) setSl(String(p.signal.stopLoss));
+    if (p.suggestedUnits != null) setUnits(String(Math.abs(p.suggestedUnits)));
+  }
+
+  async function scanStrategies() {
+    setScanning(true);
+    setError(null);
+    setSuccess(null);
+    setPending(null);
+    try {
+      const res = await fetch("/api/strategy/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ instrument, timeframe }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Strategy scan failed");
+      if (data.limits?.halted) {
+        setHalted(true);
+        setHaltMsg(data.limits.message);
+      }
+      const consensus = data.consensus as Signal | null;
+      applyPending({
+        source: "strategy",
+        title: consensus
+          ? `Strategy confluence · ${consensus.bias}`
+          : "Strategy scan · no setup",
+        signal: consensus || {
+          bias: "WAIT",
+          confidence: 0,
+          rationale: `No consensus (BUY ${data.buyVotes}, SELL ${data.sellVotes}). Check individual strategies below.`,
+          takeProfit: null,
+          stopLoss: null,
+        },
+        entry: data.entry,
+        lastClose: data.lastClose,
+        suggestedUnits: data.suggestedUnits,
+        riskAmount: data.riskAmount,
+        rr: data.rr,
+        strategyRows: data.signals || [],
+        buyVotes: data.buyVotes,
+        sellVotes: data.sellVotes,
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Strategy scan failed");
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  async function analyzeAi() {
     setAnalyzing(true);
     setError(null);
     setSuccess(null);
-    setAnalysis(null);
+    setPending(null);
     try {
       const res = await fetch("/api/ai/analyze", {
         method: "POST",
@@ -99,15 +167,20 @@ export default function TradePage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Analyze failed");
-      setAnalysis(data);
       if (data.limits?.halted) {
         setHalted(true);
         setHaltMsg(data.limits.message);
       }
-      if (data.signal?.takeProfit != null) setTp(String(data.signal.takeProfit));
-      if (data.signal?.stopLoss != null) setSl(String(data.signal.stopLoss));
-      if (data.suggestedUnits != null)
-        setUnits(String(Math.abs(data.suggestedUnits)));
+      applyPending({
+        source: "manual",
+        title: "Gemini AI signal",
+        signal: data.signal,
+        entry: data.entry,
+        lastClose: data.lastClose,
+        suggestedUnits: data.suggestedUnits,
+        riskAmount: data.riskAmount,
+        rr: data.rr,
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Analyze failed");
     } finally {
@@ -116,7 +189,7 @@ export default function TradePage() {
   }
 
   async function placeTrade() {
-    if (!analysis || analysis.signal.bias === "WAIT") return;
+    if (!pending || pending.signal.bias === "WAIT") return;
     setPlacing(true);
     setError(null);
     setSuccess(null);
@@ -125,15 +198,16 @@ export default function TradePage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          source: pending.source,
           instrument,
           timeframe,
-          side: analysis.signal.bias,
+          side: pending.signal.bias,
           takeProfit: Number(tp),
           stopLoss: Number(sl),
           units: units ? Number(units) : undefined,
-          confidence: analysis.signal.confidence,
-          rationale: analysis.signal.rationale,
-          entryPrice: analysis.entry,
+          confidence: pending.signal.confidence,
+          rationale: pending.signal.rationale,
+          entryPrice: pending.entry,
         }),
       });
       const data = await res.json();
@@ -141,7 +215,7 @@ export default function TradePage() {
       setSuccess(
         `Order filled @ ${data.fillPrice} · ${Math.abs(data.units)} units`,
       );
-      setAnalysis(null);
+      setPending(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Order failed");
     } finally {
@@ -156,7 +230,7 @@ export default function TradePage() {
         <div>
           <h1 className="display text-3xl text-[var(--brand)]">Trade desk</h1>
           <p className="mt-1 text-[var(--ink-soft)]">
-            Choose a pair, read the tape, ask the AI, confirm the entry.
+            Scan built-in strategies (no AI) or ask Gemini — then confirm the entry.
           </p>
         </div>
         {halted ? (
@@ -174,7 +248,7 @@ export default function TradePage() {
             value={instrument}
             onChange={(e) => {
               setInstrument(e.target.value);
-              setAnalysis(null);
+              setPending(null);
             }}
           >
             {(instruments.length
@@ -194,7 +268,7 @@ export default function TradePage() {
             value={timeframe}
             onChange={(e) => {
               setTimeframe(e.target.value);
-              setAnalysis(null);
+              setPending(null);
             }}
           >
             {["M5", "M15", "H1", "H4", "D"].map((t) => (
@@ -214,8 +288,16 @@ export default function TradePage() {
         </button>
         <button
           type="button"
+          className="btn btn-primary"
+          onClick={() => void scanStrategies()}
+          disabled={scanning || halted}
+        >
+          {scanning ? "Scanning…" : "Scan strategies"}
+        </button>
+        <button
+          type="button"
           className="btn btn-accent"
-          onClick={() => void analyze()}
+          onClick={() => void analyzeAi()}
           disabled={analyzing || halted}
         >
           {analyzing ? "Analyzing…" : "Analyze with AI"}
@@ -235,49 +317,73 @@ export default function TradePage() {
       {error && <p className="text-sm font-medium text-[var(--danger)]">{error}</p>}
       {success && <p className="text-sm font-medium text-[var(--ok)]">{success}</p>}
 
-      {analysis && (
+      {pending && (
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="panel space-y-3 p-5">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="display text-xl">AI signal</h2>
+              <h2 className="display text-xl">{pending.title}</h2>
               <span
                 className={`badge ${
-                  analysis.signal.bias === "WAIT"
+                  pending.signal.bias === "WAIT"
                     ? ""
-                    : analysis.signal.bias === "BUY"
+                    : pending.signal.bias === "BUY"
                       ? "badge-ok"
                       : "badge-halt"
                 }`}
               >
-                {analysis.signal.bias}
+                {pending.signal.bias}
               </span>
+              {pending.source === "strategy" && (
+                <span className="badge badge-auto">local rules</span>
+              )}
               <span className="mono text-sm text-[var(--ink-soft)]">
-                conf {(analysis.signal.confidence * 100).toFixed(0)}%
+                conf {(pending.signal.confidence * 100).toFixed(0)}%
               </span>
             </div>
             <p className="text-sm leading-relaxed text-[var(--ink-soft)]">
-              {analysis.signal.rationale}
+              {pending.signal.rationale}
             </p>
+            {pending.strategyRows && (
+              <div className="space-y-2 border-t border-[var(--line)] pt-3">
+                <div className="text-xs uppercase tracking-wider text-[var(--ink-soft)]">
+                  Per-strategy · BUY {pending.buyVotes} / SELL {pending.sellVotes}
+                </div>
+                {pending.strategyRows.map((row) => (
+                  <div
+                    key={row.id}
+                    className="flex flex-wrap items-start justify-between gap-2 text-sm"
+                  >
+                    <div>
+                      <span className="font-semibold">{row.name}</span>
+                      <span className="ml-2 badge">{row.bias}</span>
+                      <p className="mt-1 text-xs text-[var(--ink-soft)]">
+                        {row.rationale}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div>
-                <div className="label">Entry hint</div>
-                <div className="mono">{analysis.entry}</div>
+                <div className="label">Entry</div>
+                <div className="mono">{pending.entry}</div>
               </div>
               <div>
                 <div className="label">Last close</div>
-                <div className="mono">{analysis.lastClose}</div>
+                <div className="mono">{pending.lastClose}</div>
               </div>
               <div>
                 <div className="label">Suggested R:R</div>
                 <div className="mono">
-                  {analysis.rr != null ? analysis.rr.toFixed(2) : "—"}
+                  {pending.rr != null ? pending.rr.toFixed(2) : "—"}
                 </div>
               </div>
               <div>
                 <div className="label">$ risk</div>
                 <div className="mono">
-                  {analysis.riskAmount != null
-                    ? analysis.riskAmount.toFixed(2)
+                  {pending.riskAmount != null
+                    ? pending.riskAmount.toFixed(2)
                     : "—"}
                 </div>
               </div>
@@ -286,9 +392,9 @@ export default function TradePage() {
 
           <div className="panel space-y-3 p-5">
             <h2 className="display text-xl">Confirm order</h2>
-            {analysis.signal.bias === "WAIT" ? (
+            {pending.signal.bias === "WAIT" ? (
               <p className="text-sm text-[var(--ink-soft)]">
-                AI recommends waiting — no trade to place.
+                No actionable setup — wait for the next bar or try another pair/TF.
               </p>
             ) : (
               <>
@@ -326,7 +432,7 @@ export default function TradePage() {
                 >
                   {placing
                     ? "Placing…"
-                    : `Confirm ${analysis.signal.bias} market order`}
+                    : `Confirm ${pending.signal.bias} market order`}
                 </button>
               </>
             )}

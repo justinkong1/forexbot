@@ -24,6 +24,11 @@ model Settings {
   autoIntervalMinutes  Int      @default(60)
   autoMinConfidence    Float    @default(0.7)
   maxOpenTrades        Int      @default(3)
+  autoMode             String   @default("strategy")
+  enabledStrategies    String   @default("ema_cross,rsi_reversion,macd_cross,bb_bounce")
+  strategyMinVotes     Int      @default(1)
+  atrSlMult            Float    @default(1.5)
+  atrTpMult            Float    @default(2.5)
   liveAcknowledged     Boolean  @default(false)
   liveAutoAcknowledged Boolean  @default(false)
   dailyMaxLoss         Float?

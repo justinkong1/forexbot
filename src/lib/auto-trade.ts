@@ -2,6 +2,7 @@ import { loadCredentials } from "./credentials";
 import { getLimitStatus } from "./limits";
 import {
   analyzeInstrument,
+  analyzeStrategies,
   executeTrade,
   recordSkip,
 } from "./execute";
@@ -58,12 +59,13 @@ async function runCycle() {
       return;
     }
 
+    const mode = settings.autoMode || "strategy";
     const watchlist = settings.autoWatchlist
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
     const tf = settings.autoTimeframe as CandleGranularity;
-    const openTrades = await getOpenTrades(oanda);
+    let openTrades = await getOpenTrades(oanda);
 
     for (const instrument of watchlist) {
       try {
@@ -74,7 +76,7 @@ async function runCycle() {
         }
         if (openTrades.length >= settings.maxOpenTrades) {
           await recordSkip({
-            source: "auto",
+            source: mode === "ai" ? "auto" : "strategy",
             instrument,
             timeframe: tf,
             reason: "Max open trades reached",
@@ -85,7 +87,7 @@ async function runCycle() {
         const pos = await getPositionForInstrument(oanda, instrument);
         if (pos) {
           await recordSkip({
-            source: "auto",
+            source: mode === "ai" ? "auto" : "strategy",
             instrument,
             timeframe: tf,
             reason: "Already in position",
@@ -93,61 +95,118 @@ async function runCycle() {
           continue;
         }
 
-        const analysis = await analyzeInstrument({
-          instrument,
-          timeframe: tf,
-        });
-        const { signal } = analysis;
+        if (mode === "strategy" || mode === "both") {
+          const scan = await analyzeStrategies({ instrument, timeframe: tf });
+          if (!scan.consensus) {
+            await recordSkip({
+              source: "strategy",
+              instrument,
+              timeframe: tf,
+              reason: `No strategy consensus (BUY votes ${scan.buyVotes}, SELL ${scan.sellVotes})`,
+            });
+          } else if (scan.consensus.confidence < settings.autoMinConfidence) {
+            await recordSkip({
+              source: "strategy",
+              instrument,
+              timeframe: tf,
+              signal: scan.consensus,
+              reason: `Strategy confidence ${scan.consensus.confidence.toFixed(2)} < ${settings.autoMinConfidence}`,
+            });
+          } else if (
+            scan.consensus.takeProfit == null ||
+            scan.consensus.stopLoss == null
+          ) {
+            await recordSkip({
+              source: "strategy",
+              instrument,
+              timeframe: tf,
+              signal: scan.consensus,
+              reason: "Missing TP/SL from strategies",
+            });
+          } else {
+            if (
+              scan.consensus.bias !== "BUY" &&
+              scan.consensus.bias !== "SELL"
+            ) {
+              continue;
+            }
+            await executeTrade({
+              source: "strategy",
+              instrument,
+              timeframe: tf,
+              side: scan.consensus.bias,
+              takeProfit: scan.consensus.takeProfit,
+              stopLoss: scan.consensus.stopLoss,
+              confidence: scan.consensus.confidence,
+              rationale: scan.consensus.rationale,
+              entryPrice: scan.consensus.entry,
+              units: scan.suggestedUnits ?? undefined,
+            });
+            openTrades = await getOpenTrades(oanda);
+            // If mode is both, still skip AI for this pair once filled
+            continue;
+          }
+          if (mode === "strategy") continue;
+        }
 
-        if (signal.bias === "WAIT") {
-          await recordSkip({
+        if (mode === "ai" || mode === "both") {
+          const analysis = await analyzeInstrument({
+            instrument,
+            timeframe: tf,
+          });
+          const { signal } = analysis;
+
+          if (signal.bias === "WAIT") {
+            await recordSkip({
+              source: "auto",
+              instrument,
+              timeframe: tf,
+              signal,
+              reason: "AI said WAIT",
+            });
+            continue;
+          }
+
+          if (signal.confidence < settings.autoMinConfidence) {
+            await recordSkip({
+              source: "auto",
+              instrument,
+              timeframe: tf,
+              signal,
+              reason: `AI confidence ${signal.confidence.toFixed(2)} < ${settings.autoMinConfidence}`,
+            });
+            continue;
+          }
+
+          if (signal.takeProfit == null || signal.stopLoss == null) {
+            await recordSkip({
+              source: "auto",
+              instrument,
+              timeframe: tf,
+              signal,
+              reason: "Missing TP/SL",
+            });
+            continue;
+          }
+
+          await executeTrade({
             source: "auto",
             instrument,
             timeframe: tf,
-            signal,
-            reason: "AI said WAIT",
+            side: signal.bias,
+            takeProfit: signal.takeProfit,
+            stopLoss: signal.stopLoss,
+            confidence: signal.confidence,
+            rationale: signal.rationale,
+            entryPrice: analysis.entry,
+            units: analysis.suggestedUnits ?? undefined,
           });
-          continue;
+          openTrades = await getOpenTrades(oanda);
         }
-
-        if (signal.confidence < settings.autoMinConfidence) {
-          await recordSkip({
-            source: "auto",
-            instrument,
-            timeframe: tf,
-            signal,
-            reason: `Confidence ${signal.confidence.toFixed(2)} < ${settings.autoMinConfidence}`,
-          });
-          continue;
-        }
-
-        if (signal.takeProfit == null || signal.stopLoss == null) {
-          await recordSkip({
-            source: "auto",
-            instrument,
-            timeframe: tf,
-            signal,
-            reason: "Missing TP/SL",
-          });
-          continue;
-        }
-
-        await executeTrade({
-          source: "auto",
-          instrument,
-          timeframe: tf,
-          side: signal.bias,
-          takeProfit: signal.takeProfit,
-          stopLoss: signal.stopLoss,
-          confidence: signal.confidence,
-          rationale: signal.rationale,
-          entryPrice: analysis.entry,
-          units: analysis.suggestedUnits ?? undefined,
-        });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         await recordSkip({
-          source: "auto",
+          source: mode === "ai" ? "auto" : "strategy",
           instrument,
           timeframe: tf,
           reason: msg,
@@ -157,30 +216,13 @@ async function runCycle() {
 
     lastRunAt = new Date().toISOString();
     lastError = null;
-    lastStatus = "ok";
+    lastStatus = `ok:${mode}`;
   } catch (e) {
     lastError = e instanceof Error ? e.message : String(e);
     lastStatus = "error";
   } finally {
     running = false;
   }
-}
-
-export function startAutoTradeWorker() {
-  if (timer) return;
-  // Kick off soon, then interval from settings on each tick's scheduling is dynamic via restart
-  void runCycle();
-  timer = setInterval(() => {
-    void (async () => {
-      const { settings } = await loadCredentials();
-      // Interval is fixed after start; restartAutoTradeWorker refreshes it
-      if (!settings.autoTradeEnabled) {
-        lastStatus = "disabled";
-        return;
-      }
-      await runCycle();
-    })();
-  }, 60_000); // check every minute; runCycle no-ops when disabled; actual scan cadence gated below
 }
 
 let lastFullScan = 0;
@@ -207,7 +249,6 @@ export function startAutoTradeWorkerSmart() {
       }
     })();
   }, 30_000);
-  // immediate first check after short delay
   setTimeout(() => {
     lastFullScan = 0;
     void runCycle().then(() => {
@@ -229,7 +270,6 @@ export async function triggerAutoTradeNow() {
   return getAutoTradeRuntime();
 }
 
-// Auto-start in Node server runtime (not during edge/build)
 declare global {
   var __autoTradeStarted: boolean | undefined;
 }

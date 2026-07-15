@@ -21,6 +21,11 @@ interface SettingsState {
   autoIntervalMinutes: number;
   autoMinConfidence: number;
   maxOpenTrades: number;
+  autoMode: string;
+  enabledStrategies: string;
+  strategyMinVotes: number;
+  atrSlMult: number;
+  atrTpMult: number;
   liveAcknowledged: boolean;
   liveAutoAcknowledged: boolean;
   dailyMaxLoss: number | null;
@@ -48,6 +53,11 @@ const empty: SettingsState = {
   autoIntervalMinutes: 60,
   autoMinConfidence: 0.7,
   maxOpenTrades: 3,
+  autoMode: "strategy",
+  enabledStrategies: "ema_cross,rsi_reversion,macd_cross,bb_bounce",
+  strategyMinVotes: 1,
+  atrSlMult: 1.5,
+  atrTpMult: 2.5,
   liveAcknowledged: false,
   liveAutoAcknowledged: false,
   dailyMaxLoss: null,
@@ -380,6 +390,99 @@ export default function SettingsPage() {
               </span>
             </label>
           )}
+          <div>
+            <label className="label">Detection mode</label>
+            <select
+              className="select"
+              value={s.autoMode}
+              onChange={(e) => setS({ ...s, autoMode: e.target.value })}
+            >
+              <option value="strategy">Strategies only (no AI)</option>
+              <option value="ai">Gemini AI only</option>
+              <option value="both">Strategies first, then AI fallback</option>
+            </select>
+            <p className="mt-1 text-xs text-[var(--ink-soft)]">
+              Strategies use local EMA/RSI/MACD/Bollinger rules — no Gemini key needed.
+            </p>
+          </div>
+          <div>
+            <label className="label">Enabled strategies</label>
+            <div className="space-y-2 text-sm">
+              {[
+                { id: "ema_cross", label: "EMA Cross + Trend" },
+                { id: "rsi_reversion", label: "RSI Pullback" },
+                { id: "macd_cross", label: "MACD Momentum" },
+                { id: "bb_bounce", label: "Bollinger Bounce" },
+              ].map((st) => {
+                const enabled = s.enabledStrategies
+                  .split(",")
+                  .map((x) => x.trim())
+                  .includes(st.id);
+                return (
+                  <label key={st.id} className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={enabled}
+                      onChange={(e) => {
+                        const set = new Set(
+                          s.enabledStrategies
+                            .split(",")
+                            .map((x) => x.trim())
+                            .filter(Boolean),
+                        );
+                        if (e.target.checked) set.add(st.id);
+                        else set.delete(st.id);
+                        setS({
+                          ...s,
+                          enabledStrategies: Array.from(set).join(","),
+                        });
+                      }}
+                    />
+                    {st.label}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+          <div className="grid gap-4 md:grid-cols-3">
+            <div>
+              <label className="label">Min strategy votes</label>
+              <input
+                className="input mono"
+                type="number"
+                min={1}
+                max={4}
+                value={s.strategyMinVotes}
+                onChange={(e) =>
+                  setS({ ...s, strategyMinVotes: Number(e.target.value) })
+                }
+              />
+            </div>
+            <div>
+              <label className="label">ATR SL mult</label>
+              <input
+                className="input mono"
+                type="number"
+                step="0.1"
+                value={s.atrSlMult}
+                onChange={(e) =>
+                  setS({ ...s, atrSlMult: Number(e.target.value) })
+                }
+              />
+            </div>
+            <div>
+              <label className="label">ATR TP mult</label>
+              <input
+                className="input mono"
+                type="number"
+                step="0.1"
+                value={s.atrTpMult}
+                onChange={(e) =>
+                  setS({ ...s, atrTpMult: Number(e.target.value) })
+                }
+              />
+            </div>
+          </div>
           <div>
             <label className="label">Watchlist (comma-separated)</label>
             <input

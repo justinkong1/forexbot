@@ -100,7 +100,8 @@ export default function HistoryPage() {
           <select className="select" value={source} onChange={(e) => setSource(e.target.value)}>
             <option value="">All</option>
             <option value="manual">Manual</option>
-            <option value="auto">Auto</option>
+            <option value="auto">Auto (AI)</option>
+            <option value="strategy">Strategy</option>
           </select>
         </div>
         <div>
@@ -139,7 +140,7 @@ export default function HistoryPage() {
         {trades.map((t) => (
           <article key={t.id} className="panel p-4 md:p-5">
             <div className="flex flex-wrap items-center gap-2">
-              <span className={`badge ${t.source === "auto" ? "badge-auto" : ""}`}>
+              <span className={`badge ${t.source === "auto" || t.source === "strategy" ? "badge-auto" : ""}`}>
                 {t.source}
               </span>
               <span

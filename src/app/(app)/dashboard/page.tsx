@@ -215,7 +215,7 @@ export default function DashboardPage() {
         <Link href="/trade" className="panel block p-6 transition hover:-translate-y-0.5">
           <h3 className="display text-xl">Manual AI trade</h3>
           <p className="mt-2 text-sm text-[var(--ink-soft)]">
-            Pick a pair, analyze with Gemini, confirm TP/SL entry.
+            Scan EMA/RSI/MACD/Bollinger strategies locally, or use Gemini.
           </p>
         </Link>
         <Link href="/history" className="panel block p-6 transition hover:-translate-y-0.5">

@@ -8,8 +8,12 @@ export async function POST(req: NextRequest) {
     if (side !== "BUY" && side !== "SELL") {
       return NextResponse.json({ error: "side must be BUY or SELL" }, { status: 400 });
     }
+    const source =
+      body.source === "strategy" || body.source === "auto"
+        ? body.source
+        : "manual";
     const result = await executeTrade({
-      source: "manual",
+      source,
       instrument: String(body.instrument),
       timeframe: String(body.timeframe || "H1"),
       side,
