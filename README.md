@@ -32,9 +32,10 @@ Open [http://localhost:3000](http://localhost:3000), log in, then go to **Settin
 
 - **Login** — single-user session gate
 - **Settings** — encrypted broker/AI secrets, risk caps, auto-trade, circuit breakers
-- **Trade desk** — pair/TF chart → Gemini analyze → confirm market order with TP/SL
-- **Auto-trade** — interval worker scans watchlist, journals skips, respects limits
-- **History** — filter by `manual` / `auto`, outcome, pair; stores AI rationale + lessons
+- **Strategy engine (no external AI)** — EMA cross, RSI pullback, MACD, Bollinger bounce with ATR TP/SL
+- **Trade desk** — pair/TF chart → Scan strategies or Gemini → confirm market order
+- **Auto-trade** — interval worker in `strategy` / `ai` / `both` mode
+- **History** — filter by `manual` / `auto` / `strategy`
 - **Limits** — daily/weekly max loss & max win halt both manual and auto entries (UTC)
 
 ## Safety defaults

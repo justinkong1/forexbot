@@ -13,11 +13,17 @@ import { analyzePair, type TradeSignal } from "./ai";
 import {
   calculateUnits,
   plannedRiskAmount,
+  riskRewardRatio,
   validateTpSl,
 } from "./risk";
 import { sendDiscord } from "./discord";
+import {
+  parseEnabledStrategies,
+  scanStrategies,
+  type StrategySignal,
+} from "./strategies";
 
-export type TradeSource = "manual" | "auto";
+export type TradeSource = "manual" | "auto" | "strategy";
 
 export interface ExecuteTradeInput {
   source: TradeSource;
@@ -30,6 +36,46 @@ export interface ExecuteTradeInput {
   confidence?: number;
   rationale?: string;
   entryPrice?: number;
+}
+
+function sizeFromSignal(params: {
+  balance: number;
+  riskPercent: number;
+  maxUnits: number;
+  entry: number;
+  signal: { bias: "BUY" | "SELL" | "WAIT"; takeProfit: number | null; stopLoss: number | null };
+}) {
+  let suggestedUnits: number | null = null;
+  let riskAmount: number | null = null;
+  let rr: number | null = null;
+  const { signal, entry, balance } = params;
+  if (
+    signal.bias !== "WAIT" &&
+    signal.takeProfit != null &&
+    signal.stopLoss != null &&
+    entry > 0
+  ) {
+    suggestedUnits = calculateUnits({
+      equity: balance,
+      riskPercent: params.riskPercent,
+      entryPrice: entry,
+      stopLoss: signal.stopLoss,
+      maxUnits: params.maxUnits,
+      side: signal.bias,
+    });
+    riskAmount = plannedRiskAmount(
+      Math.abs(suggestedUnits),
+      entry,
+      signal.stopLoss,
+    );
+    rr = riskRewardRatio(
+      entry,
+      signal.takeProfit,
+      signal.stopLoss,
+      signal.bias,
+    );
+  }
+  return { suggestedUnits, riskAmount, rr };
 }
 
 export async function analyzeInstrument(params: {
@@ -69,49 +115,68 @@ export async function analyzeInstrument(params: {
 
   const lastClose = candles[candles.length - 1]?.close ?? 0;
   const entry = signal.entryHint || lastClose;
-  let suggestedUnits: number | null = null;
-  let riskAmount: number | null = null;
-  let rr: number | null = null;
-
-  if (
-    signal.bias !== "WAIT" &&
-    signal.takeProfit != null &&
-    signal.stopLoss != null &&
-    entry > 0
-  ) {
-    suggestedUnits = calculateUnits({
-      equity: balance,
-      riskPercent: settings.riskPercent,
-      entryPrice: entry,
-      stopLoss: signal.stopLoss,
-      maxUnits: settings.maxUnits,
-      side: signal.bias,
-    });
-    riskAmount = plannedRiskAmount(
-      Math.abs(suggestedUnits),
-      entry,
-      signal.stopLoss,
-    );
-    const reward =
-      signal.bias === "BUY"
-        ? signal.takeProfit - entry
-        : entry - signal.takeProfit;
-    const risk =
-      signal.bias === "BUY"
-        ? entry - signal.stopLoss
-        : signal.stopLoss - entry;
-    rr = risk > 0 ? reward / risk : null;
-  }
+  const sized = sizeFromSignal({
+    balance,
+    riskPercent: settings.riskPercent,
+    maxUnits: settings.maxUnits,
+    entry,
+    signal,
+  });
 
   return {
     signal,
     entry,
-    suggestedUnits,
-    riskAmount,
-    rr,
+    ...sized,
     lastClose,
     balance,
     candles,
+  };
+}
+
+export async function analyzeStrategies(params: {
+  instrument: string;
+  timeframe: CandleGranularity;
+}) {
+  const { oanda, settings } = await loadCredentials();
+  if (!oanda) throw new Error("OANDA credentials not configured");
+
+  const candles = await getCandles(oanda, params.instrument, params.timeframe, 120);
+  const account = await getAccountSummary(oanda);
+  const balance = parseFloat(String(account.balance ?? account.NAV ?? 0));
+  const enabled = parseEnabledStrategies(settings.enabledStrategies);
+  const scan = scanStrategies({
+    instrument: params.instrument,
+    candles,
+    enabledIds: enabled,
+    minVotes: settings.strategyMinVotes,
+    atrSlMult: settings.atrSlMult,
+    atrTpMult: settings.atrTpMult,
+  });
+
+  let suggestedUnits: number | null = null;
+  let riskAmount: number | null = null;
+  let rr: number | null = null;
+  if (scan.consensus) {
+    const sized = sizeFromSignal({
+      balance,
+      riskPercent: settings.riskPercent,
+      maxUnits: settings.maxUnits,
+      entry: scan.consensus.entry,
+      signal: scan.consensus,
+    });
+    suggestedUnits = sized.suggestedUnits;
+    riskAmount = sized.riskAmount;
+    rr = sized.rr;
+  }
+
+  return {
+    ...scan,
+    suggestedUnits,
+    riskAmount,
+    rr,
+    balance,
+    lastClose: scan.entry,
+    enabledStrategies: enabled,
   };
 }
 
@@ -239,16 +304,17 @@ export async function recordSkip(params: {
   source: TradeSource;
   instrument: string;
   timeframe: string;
-  signal?: TradeSignal | null;
+  signal?: TradeSignal | StrategySignal | null;
   reason: string;
 }) {
+  const bias = params.signal?.bias;
   return prisma.tradeJournal.create({
     data: {
       source: params.source,
       outcome: "skipped",
       instrument: params.instrument,
       timeframe: params.timeframe,
-      side: params.signal?.bias === "WAIT" ? null : params.signal?.bias ?? null,
+      side: bias === "WAIT" || !bias ? null : bias,
       confidence: params.signal?.confidence ?? null,
       rationale: params.signal?.rationale ?? null,
       takeProfit: params.signal?.takeProfit ?? null,
