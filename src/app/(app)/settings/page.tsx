@@ -10,6 +10,7 @@ interface SettingsState {
   discordMasked: string;
   hasOandaToken: boolean;
   hasGeminiKey: boolean;
+  geminiModel: string;
   hasDiscord: boolean;
   riskPercent: number;
   maxUnits: number;
@@ -36,6 +37,7 @@ const empty: SettingsState = {
   discordMasked: "",
   hasOandaToken: false,
   hasGeminiKey: false,
+  geminiModel: "gemini-1.5-flash",
   hasDiscord: false,
   riskPercent: 1,
   maxUnits: 10000,
@@ -176,6 +178,21 @@ export default function SettingsPage() {
 
         <section className="panel space-y-4 p-5 md:p-6">
           <h2 className="display text-xl">Gemini AI</h2>
+          <div>
+            <label className="label">Model</label>
+            <select
+              className="select"
+              value={s.geminiModel}
+              onChange={(e) => setS({ ...s, geminiModel: e.target.value })}
+            >
+              <option value="gemini-1.5-flash">1.5 Flash (recommended)</option>
+              <option value="gemini-1.5-pro">1.5 Pro</option>
+              <option value="gemini-2.0-flash">2.0 Flash</option>
+            </select>
+            <p className="mt-1 text-xs text-[var(--ink-soft)]">
+              Use 1.5 Flash if you hit free-tier quota errors on 2.0 Flash.
+            </p>
+          </div>
           <div>
             <label className="label">
               API key{" "}
