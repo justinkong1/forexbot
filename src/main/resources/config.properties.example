@@ -1,9 +1,0 @@
-# Example Configuration File
-# Rename this file to config.properties and fill in your actual credentials
-
-# OANDA API Credentials
-OANDA_TOKEN=YOUR_OANDA_PERSONAL_ACCESS_TOKEN_HERE
-OANDA_ACCOUNT_ID=YOUR_OANDA_ACCOUNT_ID_HERE
-
-# Discord Webhook URL
-DISCORD_WEBHOOK_URL=YOUR_DISCORD_WEBHOOK_URL_HERE
