@@ -2,10 +2,12 @@ import { prisma } from "./db";
 import { loadCredentials } from "./credentials";
 import { getClosedTradesSince } from "./oanda";
 import { postTradeLesson } from "./ai";
+import { notifyTradeClosed } from "./discord";
 
 /** Match OANDA closed trades to open journal rows and update P/L */
 export async function syncClosedTrades() {
-  const { oanda, geminiKey, settings } = await loadCredentials();
+  const { oanda, geminiKey, settings, discordWebhook } =
+    await loadCredentials();
   if (!oanda) return { updated: 0 };
 
   const openRows = await prisma.tradeJournal.findMany({
@@ -43,15 +45,41 @@ export async function syncClosedTrades() {
       }
     }
 
+    const closePrice = t.averageClosePrice
+      ? parseFloat(t.averageClosePrice)
+      : null;
+    const closedAt = t.closeTime ? new Date(t.closeTime) : new Date();
+
     await prisma.tradeJournal.update({
       where: { id: row.id },
       data: {
         outcome,
         realizedPl: pl,
-        closedAt: t.closeTime ? new Date(t.closeTime) : new Date(),
+        closedAt,
         lesson,
       },
     });
+
+    await notifyTradeClosed(discordWebhook, {
+      source: row.source,
+      instrument: row.instrument,
+      side: row.side,
+      units: row.units,
+      entryPrice: row.entryPrice,
+      takeProfit: row.takeProfit,
+      stopLoss: row.stopLoss,
+      timeframe: row.timeframe,
+      realizedPl: pl,
+      outcome,
+      openTime: row.createdAt,
+      closeTime: closedAt,
+      closePrice,
+      oandaTradeId: row.oandaTradeId,
+      rationale: row.rationale,
+      lesson,
+      confidence: row.confidence,
+    });
+
     updated += 1;
   }
 

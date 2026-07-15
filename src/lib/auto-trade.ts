@@ -7,7 +7,7 @@ import {
   recordSkip,
 } from "./execute";
 import { getOpenTrades, getPositionForInstrument, type CandleGranularity } from "./oanda";
-import { sendDiscord } from "./discord";
+import { notifyHalt } from "./discord";
 import { syncClosedTrades } from "./sync";
 
 let timer: ReturnType<typeof setInterval> | null = null;
@@ -52,9 +52,9 @@ async function runCycle() {
     const limits = await getLimitStatus();
     if (limits.halted) {
       lastStatus = `halted:${limits.reason}`;
-      await sendDiscord(
+      await notifyHalt(
         discordWebhook,
-        `Auto-trade halted: ${limits.message}`,
+        limits.message || "Circuit breaker active",
       );
       return;
     }
