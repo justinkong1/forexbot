@@ -37,7 +37,7 @@ const empty: SettingsState = {
   discordMasked: "",
   hasOandaToken: false,
   hasGeminiKey: false,
-  geminiModel: "gemini-1.5-flash",
+  geminiModel: "gemini-2.5-flash",
   hasDiscord: false,
   riskPercent: 1,
   maxUnits: 10000,
@@ -182,15 +182,23 @@ export default function SettingsPage() {
             <label className="label">Model</label>
             <select
               className="select"
-              value={s.geminiModel}
+              value={
+                ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro"].includes(
+                  s.geminiModel,
+                )
+                  ? s.geminiModel
+                  : "gemini-2.5-flash"
+              }
               onChange={(e) => setS({ ...s, geminiModel: e.target.value })}
             >
-              <option value="gemini-1.5-flash">1.5 Flash (recommended)</option>
-              <option value="gemini-1.5-pro">1.5 Pro</option>
-              <option value="gemini-2.0-flash">2.0 Flash</option>
+              <option value="gemini-2.5-flash">2.5 Flash (recommended)</option>
+              <option value="gemini-2.5-flash-lite">
+                2.5 Flash-Lite (higher free quota)
+              </option>
+              <option value="gemini-2.5-pro">2.5 Pro</option>
             </select>
             <p className="mt-1 text-xs text-[var(--ink-soft)]">
-              Use 1.5 Flash if you hit free-tier quota errors on 2.0 Flash.
+              Older 1.5 / 2.0 model IDs are retired — use a 2.5 model.
             </p>
           </div>
           <div>

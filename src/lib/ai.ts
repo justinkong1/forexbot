@@ -12,17 +12,27 @@ export interface TradeSignal {
   entryHint: number | null;
 }
 
-/** Default: 1.5-flash — fast, better free-tier headroom than 2.0-flash for many keys. */
-export const DEFAULT_GEMINI_MODEL = "gemini-1.5-flash";
+/** Default: 2.5-flash — current free-tier model (1.5 / 2.0 IDs are retired or quota-blocked). */
+export const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
 
 export const GEMINI_MODEL_OPTIONS = [
-  { value: "gemini-1.5-flash", label: "1.5 Flash (recommended)" },
-  { value: "gemini-1.5-pro", label: "1.5 Pro (heavier / slower)" },
-  { value: "gemini-2.0-flash", label: "2.0 Flash" },
+  { value: "gemini-2.5-flash", label: "2.5 Flash (recommended)" },
+  { value: "gemini-2.5-flash-lite", label: "2.5 Flash-Lite (higher free quota)" },
+  { value: "gemini-2.5-pro", label: "2.5 Pro (heavier)" },
 ] as const;
 
+const DEPRECATED_MODEL_MAP: Record<string, string> = {
+  "gemini-1.5-flash": DEFAULT_GEMINI_MODEL,
+  "gemini-1.5-pro": "gemini-2.5-pro",
+  "gemini-2.0-flash": DEFAULT_GEMINI_MODEL,
+  "gemini-1.5-flash-latest": DEFAULT_GEMINI_MODEL,
+  "gemini-pro": DEFAULT_GEMINI_MODEL,
+};
+
 function resolveModel(model?: string | null): string {
-  return (model && model.trim()) || process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL;
+  const raw =
+    (model && model.trim()) || process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL;
+  return DEPRECATED_MODEL_MAP[raw] || raw;
 }
 
 function stripJson(text: string): string {

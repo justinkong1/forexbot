@@ -13,7 +13,7 @@ model Settings {
   oandaAccountId       String?
   oandaEnv             String   @default("practice")
   geminiKeyEnc         String?
-  geminiModel          String   @default("gemini-1.5-flash")
+  geminiModel          String   @default("gemini-2.5-flash")
   discordWebhookEnc    String?
   riskPercent          Float    @default(1)
   maxUnits             Int      @default(10000)
