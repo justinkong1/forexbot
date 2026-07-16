@@ -1,3 +1,13 @@
+const SITE_URL = "https://kostintrades.xyz";
+const SITE_HOST = "kostintrades.xyz";
+const AD_LINE =
+  `Trade with Kostin Trades · AI + strategy forex desk → ${SITE_URL}`;
+const AD_FIELD = {
+  name: "Trade live with us",
+  value: `**[kostintrades.xyz](${SITE_URL})** — open the desk, connect OANDA, and run the same strategies.`,
+  inline: false as const,
+};
+
 export async function sendDiscord(
   webhookUrl: string | null | undefined,
   content: string,
@@ -7,7 +17,9 @@ export async function sendDiscord(
     await fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: content.slice(0, 1900) }),
+      body: JSON.stringify({
+        content: `${AD_LINE}\n${content}`.slice(0, 1900),
+      }),
     });
   } catch {
     // non-fatal
@@ -28,23 +40,30 @@ async function sendDiscordEmbed(
 ) {
   if (!webhookUrl) return;
   try {
+    const fields = [...embed.fields, AD_FIELD].slice(0, 25);
     await fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        // Plain text above the embed so the site is always visible
+        content: AD_LINE,
         embeds: [
           {
             title: embed.title.slice(0, 256),
             description: embed.description?.slice(0, 4000),
+            url: SITE_URL,
             color: embed.color,
-            fields: embed.fields.slice(0, 25).map((f) => ({
+            fields: fields.map((f) => ({
               name: f.name.slice(0, 256),
               value: (f.value || "—").slice(0, 1024),
               inline: f.inline ?? true,
             })),
-            footer: embed.footer
-              ? { text: embed.footer.slice(0, 2048) }
-              : undefined,
+            footer: {
+              text: `${embed.footer || "Kostin Trades"} · ${SITE_HOST}`.slice(
+                0,
+                2048,
+              ),
+            },
             timestamp: new Date().toISOString(),
           },
         ],
@@ -141,7 +160,7 @@ export async function notifyTradeOpened(
     description: trade.rationale || undefined,
     color: isBuy ? COLOR_BUY : COLOR_SELL,
     fields,
-    footer: "TideDesk",
+    footer: "Kostin Trades",
   });
 }
 
@@ -230,7 +249,7 @@ export async function notifyTradeClosed(
     description: description.trim() || undefined,
     color,
     fields,
-    footer: "TideDesk",
+    footer: "Kostin Trades",
   });
 }
 
@@ -243,6 +262,6 @@ export async function notifyHalt(
     description: message,
     color: COLOR_HALT,
     fields: [],
-    footer: "TideDesk · circuit breaker",
+    footer: "Kostin Trades · circuit breaker",
   });
 }
