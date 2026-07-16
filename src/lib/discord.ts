@@ -265,3 +265,104 @@ export async function notifyHalt(
     footer: "Kostin Trades · circuit breaker",
   });
 }
+
+export async function notifyTradeStatus(
+  webhookUrl: string | null | undefined,
+  status: {
+    instrument: string;
+    side: string;
+    units: number;
+    entryPrice: number;
+    currentPrice?: number | null;
+    unrealizedPl: number;
+    takeProfit?: number | null;
+    stopLoss?: number | null;
+    openTime?: string | null;
+    timeframe?: string | null;
+    source?: string | null;
+    confidence?: number | null;
+    rationale?: string | null;
+    oandaTradeId?: string | null;
+    balance?: number | null;
+    nav?: number | null;
+    currency?: string | null;
+  },
+) {
+  const digits = pairDigits(status.instrument);
+  const isBuy = status.side.toUpperCase() === "BUY";
+  const upl = status.unrealizedPl;
+  const color =
+    upl > 0.01 ? COLOR_WIN : upl < -0.01 ? COLOR_LOSS : isBuy ? COLOR_BUY : COLOR_SELL;
+
+  let holdLabel = "—";
+  if (status.openTime) {
+    const mins = Math.max(
+      0,
+      Math.round((Date.now() - new Date(status.openTime).getTime()) / 60_000),
+    );
+    holdLabel = mins < 60 ? `${mins}m` : `${(mins / 60).toFixed(1)}h`;
+  }
+
+  const fields: EmbedField[] = [
+    { name: "Status", value: "**OPEN**" },
+    { name: "Unrealized P/L", value: `**${fmtMoney(upl)}**` },
+    { name: "Pair", value: status.instrument },
+    { name: "Side", value: status.side.toUpperCase() },
+    { name: "Units", value: String(Math.abs(status.units)) },
+    { name: "Entry", value: fmt(status.entryPrice, digits) },
+  ];
+
+  if (status.currentPrice != null) {
+    fields.push({ name: "Mark", value: fmt(status.currentPrice, digits) });
+  }
+  fields.push(
+    { name: "Take profit", value: fmt(status.takeProfit ?? null, digits) },
+    { name: "Stop loss", value: fmt(status.stopLoss ?? null, digits) },
+    { name: "Hold time", value: holdLabel },
+  );
+  if (status.timeframe) {
+    fields.push({ name: "Timeframe", value: status.timeframe });
+  }
+  if (status.source) {
+    fields.push({ name: "Source", value: status.source });
+  }
+  if (status.confidence != null) {
+    fields.push({
+      name: "Confidence",
+      value: `${(status.confidence * 100).toFixed(0)}%`,
+    });
+  }
+  if (status.balance != null) {
+    fields.push({
+      name: "Balance",
+      value: `${fmtMoney(status.balance)}${status.currency ? ` ${status.currency}` : ""}`,
+    });
+  }
+  if (status.nav != null) {
+    fields.push({
+      name: "NAV",
+      value: `${fmtMoney(status.nav)}${status.currency ? ` ${status.currency}` : ""}`,
+    });
+  }
+  if (status.oandaTradeId) {
+    fields.push({ name: "OANDA trade", value: `\`${status.oandaTradeId}\`` });
+  }
+  if (status.openTime) {
+    fields.push({
+      name: "Opened",
+      value: new Date(status.openTime).toISOString(),
+      inline: false,
+    });
+  }
+
+  await sendDiscordEmbed(webhookUrl, {
+    title: `Live trade status · ${status.side.toUpperCase()} ${status.instrument} · ${fmtMoney(upl)}`,
+    description: status.rationale
+      ? `**Entry thesis**\n${status.rationale}`
+      : undefined,
+    color,
+    fields,
+    footer: "Kostin Trades · live status",
+  });
+}
+

@@ -16,6 +16,8 @@ interface Trade {
 export default function PositionsPage() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [sendingId, setSendingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -34,6 +36,28 @@ export default function PositionsPage() {
     return () => clearInterval(t);
   }, [load]);
 
+  async function sendStatus(tradeId?: string) {
+    setSendingId(tradeId || "all");
+    setError(null);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/discord/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(tradeId ? { tradeId } : {}),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to send");
+      setMsg(
+        `Sent ${data.instrument} status to Discord (uPL ${Number(data.unrealizedPl).toFixed(2)})`,
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to send");
+    } finally {
+      setSendingId(null);
+    }
+  }
+
   return (
     <div className="fade-up space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -43,19 +67,30 @@ export default function PositionsPage() {
             Live open trades from your OANDA account.
           </p>
         </div>
-        <button type="button" className="btn btn-ghost" onClick={() => void load()}>
-          Refresh
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="btn btn-accent"
+            disabled={!trades.length || sendingId != null}
+            onClick={() => void sendStatus()}
+          >
+            {sendingId === "all" ? "Sending…" : "Send status to Discord"}
+          </button>
+          <button type="button" className="btn btn-ghost" onClick={() => void load()}>
+            Refresh
+          </button>
+        </div>
       </div>
 
       {error && <p className="text-sm text-[var(--danger)]">{error}</p>}
+      {msg && <p className="text-sm text-[var(--ok)]">{msg}</p>}
 
       {trades.length === 0 && !error && (
         <div className="panel p-6 text-[var(--ink-soft)]">No open trades.</div>
       )}
 
       <div className="overflow-x-auto panel">
-        <table className="w-full min-w-[640px] text-left text-sm">
+        <table className="w-full min-w-[720px] text-left text-sm">
           <thead className="border-b border-[var(--line)] text-xs uppercase tracking-wider text-[var(--ink-soft)]">
             <tr>
               <th className="p-3">Instrument</th>
@@ -65,6 +100,7 @@ export default function PositionsPage() {
               <th className="p-3">TP</th>
               <th className="p-3">SL</th>
               <th className="p-3">Opened</th>
+              <th className="p-3">Discord</th>
             </tr>
           </thead>
           <tbody>
@@ -78,6 +114,16 @@ export default function PositionsPage() {
                 <td className="p-3 mono">{t.stopLossOrder?.price ?? "—"}</td>
                 <td className="p-3 text-[var(--ink-soft)]">
                   {new Date(t.openTime).toLocaleString()}
+                </td>
+                <td className="p-3">
+                  <button
+                    type="button"
+                    className="btn btn-ghost text-xs"
+                    disabled={sendingId != null}
+                    onClick={() => void sendStatus(t.id)}
+                  >
+                    {sendingId === t.id ? "…" : "Share"}
+                  </button>
                 </td>
               </tr>
             ))}
