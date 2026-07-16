@@ -39,6 +39,8 @@ export default function DashboardPage() {
   const [auto, setAuto] = useState<AutoStatus | null>(null);
   const [configured, setConfigured] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [discordMsg, setDiscordMsg] = useState<string | null>(null);
+  const [sendingDiscord, setSendingDiscord] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
@@ -83,10 +85,46 @@ export default function DashboardPage() {
             Account health, circuit breakers, and autopilot status.
           </p>
         </div>
-        <button type="button" className="btn btn-ghost" onClick={() => void load()}>
-          Refresh
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="btn btn-accent"
+            disabled={sendingDiscord || !configured}
+            onClick={() => {
+              void (async () => {
+                setSendingDiscord(true);
+                setDiscordMsg(null);
+                setError(null);
+                try {
+                  const res = await fetch("/api/discord/status", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: "{}",
+                  });
+                  const data = await res.json();
+                  if (!res.ok) throw new Error(data.error || "Failed");
+                  setDiscordMsg(
+                    `Sent ${data.instrument} to Discord (uPL ${Number(data.unrealizedPl).toFixed(2)})`,
+                  );
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : "Discord send failed");
+                } finally {
+                  setSendingDiscord(false);
+                }
+              })();
+            }}
+          >
+            {sendingDiscord ? "Sending…" : "Send trade status to Discord"}
+          </button>
+          <button type="button" className="btn btn-ghost" onClick={() => void load()}>
+            Refresh
+          </button>
+        </div>
       </div>
+
+      {discordMsg && (
+        <p className="text-sm font-medium text-[var(--ok)]">{discordMsg}</p>
+      )}
 
       {!configured && (
         <div className="panel p-6">
