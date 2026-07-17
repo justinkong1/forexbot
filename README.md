@@ -17,7 +17,7 @@ cp .env.example .env
 # edit AUTH_USERNAME, AUTH_PASSWORD, SESSION_SECRET, ENCRYPTION_KEY
 
 npm install
-npx prisma migrate dev --name init
+npx prisma migrate deploy
 npm run dev
 ```
 
@@ -77,4 +77,25 @@ Generate an encryption key:
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+## VPS upgrade (kostintrades.xyz)
+
+Always pull from `cursor/oanda-ai-trading-webapp-a847`. `npm run build` applies pending Prisma migrations automatically.
+
+```bash
+cd /path/to/forexbot
+git fetch origin
+git checkout cursor/oanda-ai-trading-webapp-a847
+git pull origin cursor/oanda-ai-trading-webapp-a847
+npm install
+npm run build
+sudo systemctl restart tidedesk
+```
+
+If you see an error like `column Settings.riskProfile does not exist`, the DB is behind the code. Run migrations against the **same** `DATABASE_URL` your systemd service uses, then restart:
+
+```bash
+npx prisma migrate deploy
+sudo systemctl restart tidedesk
 ```
