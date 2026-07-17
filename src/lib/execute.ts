@@ -16,6 +16,7 @@ import {
   scanStrategies,
   type StrategySignal,
 } from "./strategies";
+import { checkHtfTrend, runEntryFilters } from "./filters";
 import {
   getAccountSummary,
   getCandles,
@@ -40,6 +41,9 @@ export interface ExecuteTradeInput {
   confidence?: number;
   rationale?: string;
   entryPrice?: number;
+  strategyId?: string;
+  /** Skip session/correlation/volatility filters (manual override) */
+  skipFilters?: boolean;
 }
 
 async function resolveUnits(params: {
@@ -216,9 +220,18 @@ export async function analyzeInstrument(params: {
   };
 }
 
+const HIGHER_TF_MAP: Record<string, CandleGranularity> = {
+  M5: "M15",
+  M15: "H1",
+  H1: "H4",
+  H4: "D",
+  D: "D",
+};
+
 export async function analyzeStrategies(params: {
   instrument: string;
   timeframe: CandleGranularity;
+  excludeStrategyIds?: string[];
 }) {
   const { oanda, settings } = await loadCredentials();
   if (!oanda) throw new Error("OANDA credentials not configured");
@@ -226,7 +239,12 @@ export async function analyzeStrategies(params: {
   const candles = await getCandles(oanda, params.instrument, params.timeframe, 120);
   const account = await getAccountSummary(oanda);
   const balance = parseFloat(String(account.balance ?? account.NAV ?? 0));
-  const enabled = parseEnabledStrategies(settings.enabledStrategies);
+  let enabled = parseEnabledStrategies(settings.enabledStrategies);
+  if (params.excludeStrategyIds?.length) {
+    enabled = enabled.filter(
+      (id) => !params.excludeStrategyIds!.includes(id),
+    );
+  }
   const scan = scanStrategies({
     instrument: params.instrument,
     candles,
@@ -235,6 +253,33 @@ export async function analyzeStrategies(params: {
     atrSlMult: settings.atrSlMult,
     atrTpMult: settings.atrTpMult,
   });
+
+  // Higher-timeframe trend veto (Settings toggle)
+  let htfVeto: string | null = null;
+  if (
+    settings.htfTrendFilterEnabled &&
+    scan.consensus &&
+    scan.consensus.bias !== "WAIT"
+  ) {
+    const higherTf = HIGHER_TF_MAP[params.timeframe] || "H4";
+    if (higherTf !== params.timeframe) {
+      const htfCandles = await getCandles(
+        oanda,
+        params.instrument,
+        higherTf,
+        60,
+      );
+      const trendCheck = checkHtfTrend({
+        side: scan.consensus.bias,
+        htfCandles,
+        htfLabel: higherTf,
+      });
+      if (!trendCheck.ok) {
+        htfVeto = trendCheck.reason;
+        scan.consensus = null;
+      }
+    }
+  }
 
   let suggestedUnits: number | null = null;
   let riskAmount: number | null = null;
@@ -270,6 +315,8 @@ export async function analyzeStrategies(params: {
     lastClose: scan.entry,
     enabledStrategies: enabled,
     sizingMode,
+    htfVeto,
+    candles,
   };
 }
 
@@ -293,6 +340,24 @@ export async function executeTrade(input: ExecuteTradeInput) {
     throw new Error(
       `Max open trades reached (${settings.maxOpenTrades})`,
     );
+  }
+
+  if (!input.skipFilters) {
+    const filterCandles = await getCandles(
+      oanda,
+      input.instrument,
+      (input.timeframe as CandleGranularity) || "H1",
+      60,
+    );
+    const filterResult = runEntryFilters({
+      instrument: input.instrument,
+      candles: filterCandles,
+      openInstruments: openTrades.map((t) => t.instrument),
+      sessionFilterEnabled: settings.sessionFilterEnabled,
+    });
+    if (!filterResult.ok) {
+      throw new Error(filterResult.reason || "Blocked by entry filter");
+    }
   }
 
   const account = await getAccountSummary(oanda);
@@ -364,6 +429,7 @@ export async function executeTrade(input: ExecuteTradeInput) {
         oandaOrderId: fill?.id || result.orderCreateTransaction?.id || null,
         oandaTradeId: tradeId || null,
         timeframe: input.timeframe,
+        strategyId: input.strategyId ?? null,
       },
     });
 
@@ -415,6 +481,7 @@ export async function executeTrade(input: ExecuteTradeInput) {
         rationale: input.rationale ?? null,
         timeframe: input.timeframe,
         skipReason: msg,
+        strategyId: input.strategyId ?? null,
       },
     });
     throw e;
@@ -427,8 +494,11 @@ export async function recordSkip(params: {
   timeframe: string;
   signal?: TradeSignal | StrategySignal | null;
   reason: string;
+  strategyId?: string | null;
 }) {
   const bias = params.signal?.bias;
+  const signalStrategyId =
+    params.signal && "id" in params.signal ? params.signal.id : null;
   return prisma.tradeJournal.create({
     data: {
       source: params.source,
@@ -441,6 +511,7 @@ export async function recordSkip(params: {
       takeProfit: params.signal?.takeProfit ?? null,
       stopLoss: params.signal?.stopLoss ?? null,
       skipReason: params.reason,
+      strategyId: params.strategyId ?? signalStrategyId,
     },
   });
 }

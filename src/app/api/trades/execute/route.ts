@@ -24,6 +24,7 @@ export async function POST(req: NextRequest) {
         body.confidence != null ? Number(body.confidence) : undefined,
       rationale: body.rationale ? String(body.rationale) : undefined,
       entryPrice: body.entryPrice != null ? Number(body.entryPrice) : undefined,
+      strategyId: body.strategyId ? String(body.strategyId) : undefined,
     });
     return NextResponse.json({
       ok: true,

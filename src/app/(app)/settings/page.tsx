@@ -34,6 +34,15 @@ interface SettingsState {
   dailyMaxWin: number | null;
   weeklyMaxLoss: number | null;
   weeklyMaxWin: number | null;
+  riskProfile: string;
+  maxDrawdownPercent: number | null;
+  lossStreakHalt: number | null;
+  haltCooldownMinutes: number;
+  sessionFilterEnabled: boolean;
+  htfTrendFilterEnabled: boolean;
+  autoDisableStrategies: boolean;
+  peakEquity: number | null;
+  fullBalanceLiveAcknowledged: boolean;
 }
 
 const empty: SettingsState = {
@@ -68,7 +77,37 @@ const empty: SettingsState = {
   dailyMaxWin: null,
   weeklyMaxLoss: null,
   weeklyMaxWin: null,
+  riskProfile: "safe",
+  maxDrawdownPercent: 10,
+  lossStreakHalt: 4,
+  haltCooldownMinutes: 60,
+  sessionFilterEnabled: true,
+  htfTrendFilterEnabled: true,
+  autoDisableStrategies: true,
+  peakEquity: null,
+  fullBalanceLiveAcknowledged: false,
 };
+
+const PROFILE_CARDS = [
+  {
+    id: "safe",
+    label: "Safe",
+    blurb:
+      "Risks 1% per trade, needs 2 strategies to agree, only trades London/NY hours, stops after 4 losses in a row or a 10% drawdown.",
+  },
+  {
+    id: "balanced",
+    label: "Balanced",
+    blurb:
+      "Risks 2% per trade with the same smart filters. Pauses at a 15% drawdown or 5 losses in a row.",
+  },
+  {
+    id: "custom",
+    label: "Custom",
+    blurb:
+      "You control every knob, including full-balance sizing. Only pick this if you know what you're doing.",
+  },
+] as const;
 
 export default function SettingsPage() {
   const [s, setS] = useState<SettingsState>(empty);
@@ -130,11 +169,51 @@ export default function SettingsPage() {
       <div>
         <h1 className="display text-3xl text-[var(--brand)]">Settings</h1>
         <p className="mt-1 text-[var(--ink-soft)]">
-          Broker credentials, risk, auto-trade, and daily/weekly limits.
+          Pick a risk profile, connect your broker, and let the guardrails do
+          the worrying.
         </p>
       </div>
 
       <form onSubmit={onSubmit} className="space-y-6">
+        <section className="panel space-y-4 p-5 md:p-6">
+          <h2 className="display text-xl">Risk profile</h2>
+          <p className="text-sm text-[var(--ink-soft)]">
+            Pick how carefully the bot should trade. You can change this any
+            time — Safe is strongly recommended while you learn.
+          </p>
+          <div className="grid gap-3 md:grid-cols-3">
+            {PROFILE_CARDS.map((p) => {
+              const active = s.riskProfile === p.id;
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => setS({ ...s, riskProfile: p.id })}
+                  className={`panel space-y-2 p-4 text-left transition ${
+                    active
+                      ? "outline outline-2 outline-[var(--brand)]"
+                      : "opacity-75 hover:opacity-100"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="display text-lg">{p.label}</span>
+                    {active && <span className="badge badge-ok">Selected</span>}
+                  </div>
+                  <p className="text-xs leading-relaxed text-[var(--ink-soft)]">
+                    {p.blurb}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+          {s.riskProfile !== "custom" && (
+            <p className="text-xs text-[var(--ink-soft)]">
+              This profile locks in its sizing, filters, and kill switches when
+              you save. Switch to Custom to edit them yourself.
+            </p>
+          )}
+        </section>
+
         <section className="panel space-y-4 p-5 md:p-6">
           <h2 className="display text-xl">OANDA</h2>
           <div>
@@ -251,98 +330,287 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        <section className="panel space-y-4 p-5 md:p-6">
-          <h2 className="display text-xl">Risk / size</h2>
-          <div>
-            <label className="label">Position sizing</label>
-            <select
-              className="select"
-              value={s.sizingMode}
-              onChange={(e) => setS({ ...s, sizingMode: e.target.value })}
-            >
-              <option value="full_balance">
-                Full balance (100% margin → units for the pair)
-              </option>
-              <option value="risk_sl">
-                Risk % of equity at stop-loss
-              </option>
-            </select>
-            <p className="mt-1 text-xs text-[var(--ink-soft)]">
-              Full balance uses your available margin and the pair&apos;s
-              margin rate so one trade can deploy ~100% of the account.
-              Keep max open trades at 1.
-            </p>
-          </div>
-          {s.sizingMode === "full_balance" ? (
+        {s.riskProfile === "custom" && (
+          <section className="panel space-y-4 p-5 md:p-6">
+            <h2 className="display text-xl">Risk / size (advanced)</h2>
             <div>
-              <label className="label">Balance utilization %</label>
+              <label className="label">Position sizing</label>
+              <select
+                className="select"
+                value={s.sizingMode}
+                onChange={(e) => setS({ ...s, sizingMode: e.target.value })}
+              >
+                <option value="risk_sl">
+                  Risk % of equity at stop-loss (recommended)
+                </option>
+                <option value="full_balance">
+                  Full balance (100% margin → units for the pair)
+                </option>
+              </select>
+              <p className="mt-1 text-xs text-[var(--ink-soft)]">
+                Risk % keeps each loss small and survivable. Full balance
+                deploys nearly all margin on one trade.
+              </p>
+            </div>
+            {s.sizingMode === "full_balance" ? (
+              <>
+                <div className="border-l-4 border-l-[var(--danger)] bg-[rgba(184,58,58,0.08)] p-3 text-sm">
+                  <strong>Warning:</strong> full-balance sizing means one losing
+                  trade can wipe out most of your account. There is no way to
+                  make this safe.
+                </div>
+                <div>
+                  <label className="label">Balance utilization %</label>
+                  <input
+                    className="input mono"
+                    type="number"
+                    step="1"
+                    min="1"
+                    max="100"
+                    value={s.balanceUtilization}
+                    onChange={(e) =>
+                      setS({ ...s, balanceUtilization: Number(e.target.value) })
+                    }
+                  />
+                </div>
+                {s.oandaEnv === "live" && (
+                  <label className="flex items-start gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={s.fullBalanceLiveAcknowledged}
+                      onChange={(e) =>
+                        setS({
+                          ...s,
+                          fullBalanceLiveAcknowledged: e.target.checked,
+                        })
+                      }
+                    />
+                    <span>
+                      I understand full-balance sizing on Live can lose my whole
+                      account on a single trade.
+                    </span>
+                  </label>
+                )}
+              </>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="label">Risk % / trade (at SL)</label>
+                  <input
+                    className="input mono"
+                    type="number"
+                    step="0.1"
+                    min="0.1"
+                    max="100"
+                    value={s.riskPercent}
+                    onChange={(e) =>
+                      setS({ ...s, riskPercent: Number(e.target.value) })
+                    }
+                  />
+                  <p className="mt-1 text-xs text-[var(--ink-soft)]">
+                    How much of your account one losing trade costs. 1% = 100
+                    losses to zero; pros stay at 0.5–2%.
+                  </p>
+                </div>
+                <div>
+                  <label className="label">Max units cap</label>
+                  <input
+                    className="input mono"
+                    type="number"
+                    value={s.maxUnits}
+                    onChange={(e) =>
+                      setS({ ...s, maxUnits: Number(e.target.value) })
+                    }
+                  />
+                </div>
+              </div>
+            )}
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="label">Min R:R</label>
+                <input
+                  className="input mono"
+                  type="number"
+                  step="0.1"
+                  value={s.minRiskReward}
+                  onChange={(e) =>
+                    setS({ ...s, minRiskReward: Number(e.target.value) })
+                  }
+                />
+                <p className="mt-1 text-xs text-[var(--ink-soft)]">
+                  Rejects trades whose target is small compared to the risk.
+                </p>
+              </div>
+              <div>
+                <label className="label">Max open trades</label>
+                <input
+                  className="input mono"
+                  type="number"
+                  min={1}
+                  value={s.maxOpenTrades}
+                  onChange={(e) =>
+                    setS({ ...s, maxOpenTrades: Number(e.target.value) })
+                  }
+                />
+              </div>
+            </div>
+          </section>
+        )}
+
+        <section className="panel space-y-4 p-5 md:p-6">
+          <h2 className="display text-xl">Protection (kill switches)</h2>
+          <p className="text-sm text-[var(--ink-soft)]">
+            These stop all trading automatically when things go wrong, so one
+            bad day can&apos;t snowball.
+            {s.riskProfile !== "custom" &&
+              " Your risk profile manages the values below."}
+          </p>
+          <div className="grid gap-4 md:grid-cols-3">
+            <div>
+              <label className="label">Max drawdown %</label>
               <input
                 className="input mono"
                 type="number"
                 step="1"
                 min="1"
-                max="100"
-                value={s.balanceUtilization}
+                max="90"
+                disabled={s.riskProfile !== "custom"}
+                value={numOrEmpty(s.maxDrawdownPercent)}
                 onChange={(e) =>
-                  setS({ ...s, balanceUtilization: Number(e.target.value) })
+                  setS({
+                    ...s,
+                    maxDrawdownPercent:
+                      e.target.value === "" ? null : Number(e.target.value),
+                  })
                 }
               />
+              <p className="mt-1 text-xs text-[var(--ink-soft)]">
+                Halts when the account falls this far below its best value.
+              </p>
             </div>
-          ) : (
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <label className="label">Risk % / trade (at SL)</label>
-                <input
-                  className="input mono"
-                  type="number"
-                  step="0.1"
-                  min="0.1"
-                  max="100"
-                  value={s.riskPercent}
-                  onChange={(e) =>
-                    setS({ ...s, riskPercent: Number(e.target.value) })
-                  }
-                />
-              </div>
-              <div>
-                <label className="label">Max units cap</label>
-                <input
-                  className="input mono"
-                  type="number"
-                  value={s.maxUnits}
-                  onChange={(e) =>
-                    setS({ ...s, maxUnits: Number(e.target.value) })
-                  }
-                />
-              </div>
-            </div>
-          )}
-          <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <label className="label">Min R:R</label>
+              <label className="label">Losses in a row</label>
               <input
                 className="input mono"
                 type="number"
-                step="0.1"
-                value={s.minRiskReward}
+                min="2"
+                max="20"
+                disabled={s.riskProfile !== "custom"}
+                value={numOrEmpty(s.lossStreakHalt)}
                 onChange={(e) =>
-                  setS({ ...s, minRiskReward: Number(e.target.value) })
+                  setS({
+                    ...s,
+                    lossStreakHalt:
+                      e.target.value === "" ? null : Number(e.target.value),
+                  })
                 }
               />
+              <p className="mt-1 text-xs text-[var(--ink-soft)]">
+                Forces a break after this many consecutive losing trades.
+              </p>
             </div>
             <div>
-              <label className="label">Max open trades</label>
+              <label className="label">Cooldown (minutes)</label>
               <input
                 className="input mono"
                 type="number"
-                min={1}
-                value={s.maxOpenTrades}
+                min="0"
+                disabled={s.riskProfile !== "custom"}
+                value={s.haltCooldownMinutes}
                 onChange={(e) =>
-                  setS({ ...s, maxOpenTrades: Number(e.target.value) })
+                  setS({
+                    ...s,
+                    haltCooldownMinutes: Number(e.target.value),
+                  })
                 }
               />
+              <p className="mt-1 text-xs text-[var(--ink-soft)]">
+                How long trading stays paused after any halt trips.
+              </p>
             </div>
           </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                disabled={s.riskProfile !== "custom"}
+                checked={s.sessionFilterEnabled}
+                onChange={(e) =>
+                  setS({ ...s, sessionFilterEnabled: e.target.checked })
+                }
+              />
+              <span>
+                Only trade London/NY hours
+                <span className="block text-xs text-[var(--ink-soft)]">
+                  Skips thin, spready markets overnight and on weekends.
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                disabled={s.riskProfile !== "custom"}
+                checked={s.htfTrendFilterEnabled}
+                onChange={(e) =>
+                  setS({ ...s, htfTrendFilterEnabled: e.target.checked })
+                }
+              />
+              <span>
+                Follow the bigger trend
+                <span className="block text-xs text-[var(--ink-soft)]">
+                  Blocks trades that fight the higher-timeframe direction.
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                disabled={s.riskProfile !== "custom"}
+                checked={s.autoDisableStrategies}
+                onChange={(e) =>
+                  setS({ ...s, autoDisableStrategies: e.target.checked })
+                }
+              />
+              <span>
+                Bench losing strategies
+                <span className="block text-xs text-[var(--ink-soft)]">
+                  Auto-disables any strategy that&apos;s losing money over its
+                  recent trades.
+                </span>
+              </span>
+            </label>
+          </div>
+          {s.peakEquity != null && (
+            <div className="flex flex-wrap items-center gap-3 border-t border-[var(--line)] pt-3 text-sm">
+              <span className="text-[var(--ink-soft)]">
+                Drawdown is measured from your peak equity of{" "}
+                <span className="mono font-semibold">
+                  {s.peakEquity.toFixed(2)}
+                </span>
+                .
+              </span>
+              <button
+                type="button"
+                className="btn btn-ghost text-xs"
+                onClick={() => {
+                  void (async () => {
+                    const res = await fetch("/api/settings", {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ resetPeakEquity: true }),
+                    });
+                    if (res.ok) {
+                      const refreshed = await fetch("/api/settings");
+                      if (refreshed.ok) setS(await refreshed.json());
+                      setMsg("Peak equity reset — drawdown now measures from current equity.");
+                    }
+                  })();
+                }}
+              >
+                Reset peak to current equity
+              </button>
+            </div>
+          )}
         </section>
 
         <section className="panel space-y-4 p-5 md:p-6">
@@ -507,11 +775,15 @@ export default function SettingsPage() {
                 type="number"
                 min={1}
                 max={4}
+                disabled={s.riskProfile !== "custom"}
                 value={s.strategyMinVotes}
                 onChange={(e) =>
                   setS({ ...s, strategyMinVotes: Number(e.target.value) })
                 }
               />
+              <p className="mt-1 text-xs text-[var(--ink-soft)]">
+                How many strategies must agree before entering.
+              </p>
             </div>
             <div>
               <label className="label">ATR SL mult</label>

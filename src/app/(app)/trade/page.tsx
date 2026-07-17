@@ -134,7 +134,9 @@ export default function TradePage() {
         signal: consensus || {
           bias: "WAIT",
           confidence: 0,
-          rationale: `No consensus (BUY ${data.buyVotes}, SELL ${data.sellVotes}). Check individual strategies below.`,
+          rationale: data.htfVeto
+            ? `${data.htfVeto}. Check individual strategies below.`
+            : `No consensus (BUY ${data.buyVotes}, SELL ${data.sellVotes}). Check individual strategies below.`,
           takeProfit: null,
           stopLoss: null,
         },
@@ -208,6 +210,8 @@ export default function TradePage() {
           confidence: pending.signal.confidence,
           rationale: pending.signal.rationale,
           entryPrice: pending.entry,
+          strategyId:
+            pending.source === "strategy" ? pending.signal.id : "ai",
         }),
       });
       const data = await res.json();

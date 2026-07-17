@@ -17,8 +17,8 @@ model Settings {
   discordWebhookEnc    String?
   riskPercent          Float    @default(1)
   maxUnits             Int      @default(10000)
-  minRiskReward        Float    @default(1)
-  sizingMode           String   @default("full_balance")
+  minRiskReward        Float    @default(1.5)
+  sizingMode           String   @default("risk_sl")
   balanceUtilization   Float    @default(100)
   autoTradeEnabled     Boolean  @default(false)
   autoWatchlist        String   @default("EUR_USD,USD_JPY,GBP_USD")
@@ -28,7 +28,7 @@ model Settings {
   maxOpenTrades        Int      @default(1)
   autoMode             String   @default("strategy")
   enabledStrategies    String   @default("ema_cross,rsi_reversion,macd_cross,bb_bounce")
-  strategyMinVotes     Int      @default(1)
+  strategyMinVotes     Int      @default(2)
   atrSlMult            Float    @default(1.5)
   atrTpMult            Float    @default(2.5)
   liveAcknowledged     Boolean  @default(false)
@@ -37,6 +37,16 @@ model Settings {
   dailyMaxWin          Float?
   weeklyMaxLoss        Float?
   weeklyMaxWin         Float?
+  riskProfile          String   @default("safe")
+  maxDrawdownPercent   Float?   @default(10)
+  lossStreakHalt       Int?     @default(4)
+  haltCooldownMinutes  Int      @default(60)
+  sessionFilterEnabled Boolean  @default(true)
+  htfTrendFilterEnabled Boolean @default(true)
+  autoDisableStrategies Boolean @default(true)
+  peakEquity           Float?
+  haltedUntil          DateTime?
+  fullBalanceLiveAcknowledged Boolean @default(false)
   updatedAt            DateTime @updatedAt
 }
 
@@ -61,4 +71,5 @@ model TradeJournal {
   lesson       String?
   timeframe    String?
   skipReason   String?
+  strategyId   String?
 }

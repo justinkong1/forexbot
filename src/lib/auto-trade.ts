@@ -7,8 +7,9 @@ import {
   recordSkip,
 } from "./execute";
 import { getOpenTrades, getPositionForInstrument, type CandleGranularity } from "./oanda";
-import { notifyHalt } from "./discord";
 import { syncClosedTrades } from "./sync";
+import { getDisabledStrategyIds } from "./stats";
+import { runEntryFilters } from "./filters";
 
 let timer: ReturnType<typeof setInterval> | null = null;
 let running = false;
@@ -33,7 +34,7 @@ async function runCycle() {
   try {
     await syncClosedTrades();
 
-    const { settings, oanda, discordWebhook } = await loadCredentials();
+    const { settings, oanda } = await loadCredentials();
     if (!settings.autoTradeEnabled) {
       lastStatus = "disabled";
       return;
@@ -51,11 +52,8 @@ async function runCycle() {
 
     const limits = await getLimitStatus();
     if (limits.halted) {
+      // limits.ts sends the Discord halt notification (deduped)
       lastStatus = `halted:${limits.reason}`;
-      await notifyHalt(
-        discordWebhook,
-        limits.message || "Circuit breaker active",
-      );
       return;
     }
 
@@ -66,6 +64,11 @@ async function runCycle() {
       .filter(Boolean);
     const tf = settings.autoTimeframe as CandleGranularity;
     let openTrades = await getOpenTrades(oanda);
+
+    // Auto-disable strategies with proven negative expectancy
+    const disabledIds = settings.autoDisableStrategies
+      ? await getDisabledStrategyIds()
+      : [];
 
     for (const instrument of watchlist) {
       try {
@@ -96,13 +99,37 @@ async function runCycle() {
         }
 
         if (mode === "strategy" || mode === "both") {
-          const scan = await analyzeStrategies({ instrument, timeframe: tf });
+          const scan = await analyzeStrategies({
+            instrument,
+            timeframe: tf,
+            excludeStrategyIds: disabledIds,
+          });
+          const entryFilter = scan.consensus
+            ? runEntryFilters({
+                instrument,
+                candles: scan.candles,
+                openInstruments: openTrades.map((t) => t.instrument),
+                sessionFilterEnabled: settings.sessionFilterEnabled,
+              })
+            : { ok: true as const, reason: null };
           if (!scan.consensus) {
+            const vetoNote = scan.htfVeto ? ` — ${scan.htfVeto}` : "";
+            const disabledNote = disabledIds.length
+              ? ` (auto-disabled: ${disabledIds.join(", ")})`
+              : "";
             await recordSkip({
               source: "strategy",
               instrument,
               timeframe: tf,
-              reason: `No strategy consensus (BUY votes ${scan.buyVotes}, SELL ${scan.sellVotes})`,
+              reason: `No strategy consensus (BUY votes ${scan.buyVotes}, SELL ${scan.sellVotes})${vetoNote}${disabledNote}`,
+            });
+          } else if (!entryFilter.ok) {
+            await recordSkip({
+              source: "strategy",
+              instrument,
+              timeframe: tf,
+              signal: scan.consensus,
+              reason: entryFilter.reason || "Blocked by entry filter",
             });
           } else if (scan.consensus.confidence < settings.autoMinConfidence) {
             await recordSkip({
@@ -141,6 +168,8 @@ async function runCycle() {
               rationale: scan.consensus.rationale,
               entryPrice: scan.consensus.entry,
               units: scan.suggestedUnits ?? undefined,
+              strategyId: scan.consensus.id,
+              skipFilters: true, // already checked above with the same data
             });
             openTrades = await getOpenTrades(oanda);
             // If mode is both, still skip AI for this pair once filled
@@ -200,6 +229,7 @@ async function runCycle() {
             rationale: signal.rationale,
             entryPrice: analysis.entry,
             units: analysis.suggestedUnits ?? undefined,
+            strategyId: "ai",
           });
           openTrades = await getOpenTrades(oanda);
         }
