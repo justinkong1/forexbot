@@ -21,11 +21,44 @@ interface Limits {
   dailyMaxWin: number | null;
   weeklyMaxLoss: number | null;
   weeklyMaxWin: number | null;
+  nav: number | null;
+  peakEquity: number | null;
+  drawdownPct: number | null;
+  maxDrawdownPercent: number | null;
+  lossStreak: number;
+  lossStreakHalt: number | null;
+  haltedUntil: string | null;
 }
 
 interface AutoStatus {
   enabled: boolean;
   runtime: { lastStatus: string; lastRunAt: string | null; lastError: string | null };
+}
+
+interface StrategyStat {
+  strategyId: string;
+  name: string;
+  trades: number;
+  wins: number;
+  losses: number;
+  winRate: number | null;
+  expectancy: number | null;
+  totalPl: number;
+  verdict: "profitable" | "losing" | "insufficient";
+  autoDisabled: boolean;
+}
+
+function statVerdict(s: StrategyStat): { text: string; cls: string } {
+  if (s.verdict === "profitable") {
+    return { text: "Making money", cls: "badge-ok" };
+  }
+  if (s.verdict === "losing") {
+    return {
+      text: s.autoDisabled ? "Losing — auto-disabled" : "Losing money",
+      cls: "badge-halt",
+    };
+  }
+  return { text: "Not enough data yet", cls: "" };
 }
 
 function gaugePct(pl: number, maxLoss: number | null, maxWin: number | null) {
@@ -37,6 +70,7 @@ export default function DashboardPage() {
   const [account, setAccount] = useState<Account | null>(null);
   const [limits, setLimits] = useState<Limits | null>(null);
   const [auto, setAuto] = useState<AutoStatus | null>(null);
+  const [stats, setStats] = useState<StrategyStat[] | null>(null);
   const [configured, setConfigured] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [discordMsg, setDiscordMsg] = useState<string | null>(null);
@@ -45,11 +79,12 @@ export default function DashboardPage() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [accRes, limRes, autoRes, setRes] = await Promise.all([
+      const [accRes, limRes, autoRes, setRes, statsRes] = await Promise.all([
         fetch("/api/oanda/account"),
         fetch("/api/limits/status"),
         fetch("/api/auto-trade"),
         fetch("/api/settings"),
+        fetch("/api/stats"),
       ]);
       const settings = await setRes.json();
       if (!settings.hasOandaToken) {
@@ -65,6 +100,10 @@ export default function DashboardPage() {
       }
       if (limRes.ok) setLimits(await limRes.json());
       if (autoRes.ok) setAuto(await autoRes.json());
+      if (statsRes.ok) {
+        const data = await statsRes.json();
+        setStats(data.strategies || []);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
     }
@@ -194,6 +233,79 @@ export default function DashboardPage() {
       {limits && (
         <div className="panel p-5 md:p-6">
           <div className="mb-4 flex flex-wrap items-center gap-3">
+            <h2 className="display text-xl">Guardrails</h2>
+            {limits.halted ? (
+              <span className="badge badge-halt">Halted · {limits.reason}</span>
+            ) : (
+              <span className="badge badge-ok">All protections OK</span>
+            )}
+          </div>
+          {limits.message && (
+            <p className="mb-4 text-sm font-medium text-[var(--halt)]">
+              {limits.message}
+            </p>
+          )}
+          <div className="grid gap-3 text-sm md:grid-cols-3">
+            <div className="flex items-start gap-2">
+              <span
+                className={`badge ${
+                  limits.reason === "drawdown" ? "badge-halt" : "badge-ok"
+                }`}
+              >
+                {limits.reason === "drawdown" ? "TRIPPED" : "OK"}
+              </span>
+              <span>
+                Drawdown protection
+                <span className="block text-xs text-[var(--ink-soft)]">
+                  {limits.drawdownPct != null
+                    ? `${limits.drawdownPct.toFixed(1)}% below peak`
+                    : "No equity data yet"}
+                  {limits.maxDrawdownPercent != null &&
+                    ` (halts at ${limits.maxDrawdownPercent}%)`}
+                </span>
+              </span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span
+                className={`badge ${
+                  limits.reason === "loss_streak" ? "badge-halt" : "badge-ok"
+                }`}
+              >
+                {limits.reason === "loss_streak" ? "TRIPPED" : "OK"}
+              </span>
+              <span>
+                Loss streak
+                <span className="block text-xs text-[var(--ink-soft)]">
+                  {limits.lossStreak} in a row
+                  {limits.lossStreakHalt != null &&
+                    ` (halts at ${limits.lossStreakHalt})`}
+                </span>
+              </span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span
+                className={`badge ${
+                  limits.reason === "cooldown" ? "badge-halt" : "badge-ok"
+                }`}
+              >
+                {limits.reason === "cooldown" ? "COOLING" : "OK"}
+              </span>
+              <span>
+                Cooldown
+                <span className="block text-xs text-[var(--ink-soft)]">
+                  {limits.halted && limits.haltedUntil
+                    ? `Resumes ${new Date(limits.haltedUntil).toLocaleTimeString()}`
+                    : "Not active"}
+                </span>
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {limits && (
+        <div className="panel p-5 md:p-6">
+          <div className="mb-4 flex flex-wrap items-center gap-3">
             <h2 className="display text-xl">Daily / weekly limits</h2>
             {limits.halted ? (
               <span className="badge badge-halt">Halted · {limits.reason}</span>
@@ -249,11 +361,85 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2">
+      {stats && stats.length > 0 && (
+        <div className="panel p-5 md:p-6">
+          <div className="mb-4 flex flex-wrap items-center gap-3">
+            <h2 className="display text-xl">Strategy performance</h2>
+            <span className="text-xs text-[var(--ink-soft)]">
+              Last 30 closed trades per strategy
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] text-left text-sm">
+              <thead className="border-b border-[var(--line)] text-xs uppercase tracking-wider text-[var(--ink-soft)]">
+                <tr>
+                  <th className="p-2">Strategy</th>
+                  <th className="p-2">Trades</th>
+                  <th className="p-2">W / L</th>
+                  <th className="p-2">Win rate</th>
+                  <th className="p-2">Avg / trade</th>
+                  <th className="p-2">Total P/L</th>
+                  <th className="p-2">Verdict</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stats.map((st) => {
+                  const v = statVerdict(st);
+                  return (
+                    <tr
+                      key={st.strategyId}
+                      className="border-b border-[var(--line)] last:border-0"
+                    >
+                      <td className="p-2 font-semibold">{st.name}</td>
+                      <td className="p-2 mono">{st.trades}</td>
+                      <td className="p-2 mono">
+                        {st.wins} / {st.losses}
+                      </td>
+                      <td className="p-2 mono">
+                        {st.winRate != null
+                          ? `${(st.winRate * 100).toFixed(0)}%`
+                          : "—"}
+                      </td>
+                      <td className="p-2 mono">
+                        {st.expectancy != null
+                          ? st.expectancy.toFixed(2)
+                          : "—"}
+                      </td>
+                      <td
+                        className={`p-2 mono font-semibold ${
+                          st.totalPl > 0
+                            ? "text-[var(--ok)]"
+                            : st.totalPl < 0
+                              ? "text-[var(--danger)]"
+                              : ""
+                        }`}
+                      >
+                        {st.totalPl > 0 ? "+" : ""}
+                        {st.totalPl.toFixed(2)}
+                      </td>
+                      <td className="p-2">
+                        <span className={`badge ${v.cls}`}>{v.text}</span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <div className="grid gap-4 md:grid-cols-3">
         <Link href="/trade" className="panel block p-6 transition hover:-translate-y-0.5">
-          <h3 className="display text-xl">Manual AI trade</h3>
+          <h3 className="display text-xl">Trade desk</h3>
           <p className="mt-2 text-sm text-[var(--ink-soft)]">
             Scan EMA/RSI/MACD/Bollinger strategies locally, or use Gemini.
+          </p>
+        </Link>
+        <Link href="/backtest" className="panel block p-6 transition hover:-translate-y-0.5">
+          <h3 className="display text-xl">Backtest</h3>
+          <p className="mt-2 text-sm text-[var(--ink-soft)]">
+            Replay strategies on history before trusting them with money.
           </p>
         </Link>
         <Link href="/history" className="panel block p-6 transition hover:-translate-y-0.5">

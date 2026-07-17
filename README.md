@@ -38,11 +38,30 @@ Open [http://localhost:3000](http://localhost:3000), log in, then go to **Settin
 - **History** — filter by `manual` / `auto` / `strategy`
 - **Limits** — daily/weekly max loss & max win halt both manual and auto entries (UTC)
 
+## How the guardrails protect you
+
+TideDesk is built survival-first. Pick a **Risk profile** in Settings (Safe is default) and these run automatically:
+
+- **Small position sizing** — Safe risks 1% of equity per trade at the stop-loss, so a losing streak stays survivable
+- **Drawdown kill switch** — trading halts if the account falls 10% (Safe) below its peak equity
+- **Loss-streak kill switch** — 4 losses in a row forces a mandatory break
+- **Cooldown** — after any halt, trading stays paused (default 60 min) so nothing "revenge trades"
+- **Daily/weekly limits** — optional max loss and max win halts in account currency
+- **Session filter** — entries only during London/NY hours when spreads are sane
+- **Trend filter** — blocks trades that fight the higher-timeframe direction
+- **Correlation guard** — won't open a second trade sharing a currency with an open one
+- **Volatility check** — skips entries during news-spike conditions
+- **Strategy benching** — strategies that lose money over their recent trades are auto-disabled
+- **Backtest page** — replay each strategy on history before trusting it live
+
+No system can guarantee profits. These guardrails cap damage and keep only strategies with a measured edge in play.
+
 ## Safety defaults
 
 - Practice environment preferred; Live requires acknowledgment
 - Auto-trade off by default; Live auto requires a second acknowledgment
-- Risk % capped at 5% server-side; TP/SL and min R:R enforced
+- Full-balance sizing on Live requires an extra explicit acknowledgment
+- TP/SL and min R:R enforced on every order
 - Duplicate position on an instrument is blocked
 
 ## Env vars

@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
     }
     const limits = await getLimitStatus();
     const result = await analyzeStrategies({ instrument, timeframe });
-    return NextResponse.json({ ...result, limits });
+    return NextResponse.json({ ...result, candles: undefined, limits });
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : String(e) },

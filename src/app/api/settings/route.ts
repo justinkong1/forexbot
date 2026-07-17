@@ -3,6 +3,7 @@ import { getOrCreateSettings } from "@/lib/db";
 import { decrypt, encrypt, maskSecret } from "@/lib/crypto";
 import { getAccountSummary, type OandaEnv } from "@/lib/oanda";
 import { ensureAutoTradeWorker } from "@/lib/auto-trade";
+import { presetValues, type RiskProfile } from "@/lib/presets";
 
 export async function GET() {
   ensureAutoTradeWorker();
@@ -59,6 +60,16 @@ export async function GET() {
     dailyMaxWin: s.dailyMaxWin,
     weeklyMaxLoss: s.weeklyMaxLoss,
     weeklyMaxWin: s.weeklyMaxWin,
+    riskProfile: s.riskProfile || "safe",
+    maxDrawdownPercent: s.maxDrawdownPercent,
+    lossStreakHalt: s.lossStreakHalt,
+    haltCooldownMinutes: s.haltCooldownMinutes,
+    sessionFilterEnabled: s.sessionFilterEnabled,
+    htfTrendFilterEnabled: s.htfTrendFilterEnabled,
+    autoDisableStrategies: s.autoDisableStrategies,
+    peakEquity: s.peakEquity,
+    haltedUntil: s.haltedUntil,
+    fullBalanceLiveAcknowledged: s.fullBalanceLiveAcknowledged,
   });
 }
 
@@ -74,7 +85,14 @@ export async function PUT(req: Request) {
     );
   }
 
+  const riskProfile: RiskProfile = ["safe", "balanced", "custom"].includes(
+    String(body.riskProfile),
+  )
+    ? (String(body.riskProfile) as RiskProfile)
+    : ((s.riskProfile as RiskProfile) || "safe");
+
   const data: Record<string, unknown> = {
+    riskProfile,
     oandaAccountId: body.oandaAccountId ?? s.oandaAccountId,
     oandaEnv,
     geminiModel: String(body.geminiModel || s.geminiModel || "gemini-2.5-flash"),
@@ -85,7 +103,11 @@ export async function PUT(req: Request) {
     maxUnits: Math.max(1, Number(body.maxUnits ?? s.maxUnits)),
     minRiskReward: Math.max(0.5, Number(body.minRiskReward ?? s.minRiskReward)),
     sizingMode:
-      body.sizingMode === "risk_sl" ? "risk_sl" : "full_balance",
+      body.sizingMode === "full_balance"
+        ? "full_balance"
+        : body.sizingMode === "risk_sl"
+          ? "risk_sl"
+          : s.sizingMode || "risk_sl",
     balanceUtilization: Math.min(
       100,
       Math.max(1, Number(body.balanceUtilization ?? s.balanceUtilization ?? 100)),
@@ -139,7 +161,60 @@ export async function PUT(req: Request) {
       body.weeklyMaxWin === "" || body.weeklyMaxWin == null
         ? null
         : Number(body.weeklyMaxWin),
+    maxDrawdownPercent:
+      body.maxDrawdownPercent === "" || body.maxDrawdownPercent == null
+        ? s.maxDrawdownPercent
+        : Math.min(90, Math.max(1, Number(body.maxDrawdownPercent))),
+    lossStreakHalt:
+      body.lossStreakHalt === "" || body.lossStreakHalt == null
+        ? s.lossStreakHalt
+        : Math.max(2, Math.min(20, Number(body.lossStreakHalt))),
+    haltCooldownMinutes: Math.max(
+      0,
+      Number(body.haltCooldownMinutes ?? s.haltCooldownMinutes ?? 60),
+    ),
+    sessionFilterEnabled:
+      body.sessionFilterEnabled != null
+        ? !!body.sessionFilterEnabled
+        : s.sessionFilterEnabled,
+    htfTrendFilterEnabled:
+      body.htfTrendFilterEnabled != null
+        ? !!body.htfTrendFilterEnabled
+        : s.htfTrendFilterEnabled,
+    autoDisableStrategies:
+      body.autoDisableStrategies != null
+        ? !!body.autoDisableStrategies
+        : s.autoDisableStrategies,
+    fullBalanceLiveAcknowledged:
+      !!body.fullBalanceLiveAcknowledged || s.fullBalanceLiveAcknowledged,
   };
+
+  // Preset overrides: writing a preset pins its guardrail values
+  const preset = presetValues(riskProfile);
+  if (preset) {
+    Object.assign(data, preset);
+  }
+
+  // Reset peak equity if requested (drawdown protection restart)
+  if (body.resetPeakEquity) {
+    data.peakEquity = null;
+    data.haltedUntil = null;
+  }
+
+  // Full-balance sizing on Live requires explicit acknowledgment
+  if (
+    data.sizingMode === "full_balance" &&
+    oandaEnv === "live" &&
+    !data.fullBalanceLiveAcknowledged
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          "Full-balance sizing on a Live account can wipe out your money on one trade. Tick the acknowledgment box to enable it, or use risk-based sizing.",
+      },
+      { status: 400 },
+    );
+  }
 
   if (body.oandaToken && String(body.oandaToken).trim()) {
     data.oandaTokenEnc = encrypt(String(body.oandaToken).trim());
