@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { CandleChart, type ChartCandle } from "@/components/CandleChart";
+import { readJson } from "@/lib/http";
 
 interface Instrument {
   name: string;
@@ -63,7 +64,7 @@ export default function TradePage() {
   const loadInstruments = useCallback(async () => {
     const res = await fetch("/api/oanda/instruments");
     if (!res.ok) return;
-    const data = await res.json();
+    const data = await readJson<{ instruments?: Instrument[] }>(res);
     setInstruments(data.instruments || []);
   }, []);
 
@@ -74,7 +75,7 @@ export default function TradePage() {
       const res = await fetch(
         `/api/oanda/candles?instrument=${encodeURIComponent(instrument)}&granularity=${timeframe}&count=120`,
       );
-      const data = await res.json();
+      const data = await readJson<{ candles?: ChartCandle[] }>(res);
       if (!res.ok) throw new Error(data.error || "Failed to load candles");
       setCandles(data.candles || []);
     } catch (e) {
@@ -87,9 +88,11 @@ export default function TradePage() {
   const loadLimits = useCallback(async () => {
     const res = await fetch("/api/limits/status");
     if (!res.ok) return;
-    const data = await res.json();
+    const data = await readJson<{ halted?: boolean; message?: string | null }>(
+      res,
+    );
     setHalted(!!data.halted);
-    setHaltMsg(data.message);
+    setHaltMsg(data.message ?? null);
   }, []);
 
   useEffect(() => {
@@ -119,13 +122,25 @@ export default function TradePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ instrument, timeframe }),
       });
-      const data = await res.json();
+      const data = await readJson<{
+        limits?: { halted?: boolean; message?: string | null };
+        consensus?: Signal | null;
+        htfVeto?: string;
+        buyVotes?: number;
+        sellVotes?: number;
+        entry?: number;
+        lastClose?: number;
+        suggestedUnits?: number | null;
+        riskAmount?: number | null;
+        rr?: number | null;
+        signals?: StrategyRow[];
+      }>(res);
       if (!res.ok) throw new Error(data.error || "Strategy scan failed");
       if (data.limits?.halted) {
         setHalted(true);
-        setHaltMsg(data.limits.message);
+        setHaltMsg(data.limits.message ?? null);
       }
-      const consensus = data.consensus as Signal | null;
+      const consensus = (data.consensus as Signal | null) || null;
       applyPending({
         source: "strategy",
         title: consensus
@@ -140,11 +155,11 @@ export default function TradePage() {
           takeProfit: null,
           stopLoss: null,
         },
-        entry: data.entry,
-        lastClose: data.lastClose,
-        suggestedUnits: data.suggestedUnits,
-        riskAmount: data.riskAmount,
-        rr: data.rr,
+        entry: data.entry ?? 0,
+        lastClose: data.lastClose ?? 0,
+        suggestedUnits: data.suggestedUnits ?? null,
+        riskAmount: data.riskAmount ?? null,
+        rr: data.rr ?? null,
         strategyRows: data.signals || [],
         buyVotes: data.buyVotes,
         sellVotes: data.sellVotes,
@@ -167,21 +182,30 @@ export default function TradePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ instrument, timeframe }),
       });
-      const data = await res.json();
+      const data = await readJson<{
+        limits?: { halted?: boolean; message?: string | null };
+        signal?: Signal;
+        entry?: number;
+        lastClose?: number;
+        suggestedUnits?: number | null;
+        riskAmount?: number | null;
+        rr?: number | null;
+      }>(res);
       if (!res.ok) throw new Error(data.error || "Analyze failed");
       if (data.limits?.halted) {
         setHalted(true);
-        setHaltMsg(data.limits.message);
+        setHaltMsg(data.limits.message ?? null);
       }
+      if (!data.signal) throw new Error("No AI signal returned");
       applyPending({
         source: "manual",
         title: "Gemini AI signal",
         signal: data.signal,
-        entry: data.entry,
-        lastClose: data.lastClose,
-        suggestedUnits: data.suggestedUnits,
-        riskAmount: data.riskAmount,
-        rr: data.rr,
+        entry: data.entry ?? 0,
+        lastClose: data.lastClose ?? 0,
+        suggestedUnits: data.suggestedUnits ?? null,
+        riskAmount: data.riskAmount ?? null,
+        rr: data.rr ?? null,
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Analyze failed");
@@ -214,10 +238,10 @@ export default function TradePage() {
             pending.source === "strategy" ? pending.signal.id : "ai",
         }),
       });
-      const data = await res.json();
+      const data = await readJson<{ fillPrice?: number; units?: number }>(res);
       if (!res.ok) throw new Error(data.error || "Order failed");
       setSuccess(
-        `Order filled @ ${data.fillPrice} · ${Math.abs(data.units)} units`,
+        `Order filled @ ${data.fillPrice} · ${Math.abs(data.units || 0)} units`,
       );
       setPending(null);
     } catch (e) {

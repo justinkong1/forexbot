@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { readJson } from "@/lib/http";
 
 interface Trade {
   id: string;
@@ -22,7 +23,7 @@ export default function PositionsPage() {
   const load = useCallback(async () => {
     setError(null);
     const res = await fetch("/api/oanda/positions");
-    const data = await res.json();
+    const data = await readJson<{ trades?: Trade[] }>(res);
     if (!res.ok) {
       setError(data.error || "Failed to load");
       return;
@@ -46,7 +47,10 @@ export default function PositionsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(tradeId ? { tradeId } : {}),
       });
-      const data = await res.json();
+      const data = await readJson<{
+        instrument?: string;
+        unrealizedPl?: number;
+      }>(res);
       if (!res.ok) throw new Error(data.error || "Failed to send");
       setMsg(
         `Sent ${data.instrument} status to Discord (uPL ${Number(data.unrealizedPl).toFixed(2)})`,

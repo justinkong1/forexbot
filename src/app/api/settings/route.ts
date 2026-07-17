@@ -4,77 +4,86 @@ import { decrypt, encrypt, maskSecret } from "@/lib/crypto";
 import { getAccountSummary, type OandaEnv } from "@/lib/oanda";
 import { ensureAutoTradeWorker } from "@/lib/auto-trade";
 import { presetValues, type RiskProfile } from "@/lib/presets";
+import { apiError } from "@/lib/api-error";
 
 export async function GET() {
-  ensureAutoTradeWorker();
-  const s = await getOrCreateSettings();
-  let oandaTokenMasked = "";
-  let geminiMasked = "";
-  let discordMasked = "";
   try {
-    if (s.oandaTokenEnc) oandaTokenMasked = maskSecret(decrypt(s.oandaTokenEnc));
-  } catch {
-    oandaTokenMasked = "(encrypted)";
-  }
-  try {
-    if (s.geminiKeyEnc) geminiMasked = maskSecret(decrypt(s.geminiKeyEnc));
-  } catch {
-    geminiMasked = "(encrypted)";
-  }
-  try {
-    if (s.discordWebhookEnc)
-      discordMasked = maskSecret(decrypt(s.discordWebhookEnc));
-  } catch {
-    discordMasked = "(encrypted)";
-  }
+    ensureAutoTradeWorker();
+    const s = await getOrCreateSettings();
+    let oandaTokenMasked = "";
+    let geminiMasked = "";
+    let discordMasked = "";
+    try {
+      if (s.oandaTokenEnc) oandaTokenMasked = maskSecret(decrypt(s.oandaTokenEnc));
+    } catch {
+      oandaTokenMasked = "(encrypted)";
+    }
+    try {
+      if (s.geminiKeyEnc) geminiMasked = maskSecret(decrypt(s.geminiKeyEnc));
+    } catch {
+      geminiMasked = "(encrypted)";
+    }
+    try {
+      if (s.discordWebhookEnc)
+        discordMasked = maskSecret(decrypt(s.discordWebhookEnc));
+    } catch {
+      discordMasked = "(encrypted)";
+    }
 
-  return NextResponse.json({
-    oandaAccountId: s.oandaAccountId || "",
-    oandaEnv: s.oandaEnv,
-    oandaTokenMasked,
-    geminiMasked,
-    discordMasked,
-    hasOandaToken: !!s.oandaTokenEnc,
-    hasGeminiKey: !!s.geminiKeyEnc,
-    geminiModel: s.geminiModel || "gemini-2.5-flash",
-    hasDiscord: !!s.discordWebhookEnc,
-    riskPercent: s.riskPercent,
-    maxUnits: s.maxUnits,
-    minRiskReward: s.minRiskReward,
-    sizingMode: s.sizingMode || "full_balance",
-    balanceUtilization: s.balanceUtilization ?? 100,
-    autoTradeEnabled: s.autoTradeEnabled,
-    autoWatchlist: s.autoWatchlist,
-    autoTimeframe: s.autoTimeframe,
-    autoIntervalMinutes: s.autoIntervalMinutes,
-    autoMinConfidence: s.autoMinConfidence,
-    maxOpenTrades: s.maxOpenTrades,
-    autoMode: s.autoMode || "strategy",
-    enabledStrategies: s.enabledStrategies,
-    strategyMinVotes: s.strategyMinVotes,
-    atrSlMult: s.atrSlMult,
-    atrTpMult: s.atrTpMult,
-    liveAcknowledged: s.liveAcknowledged,
-    liveAutoAcknowledged: s.liveAutoAcknowledged,
-    dailyMaxLoss: s.dailyMaxLoss,
-    dailyMaxWin: s.dailyMaxWin,
-    weeklyMaxLoss: s.weeklyMaxLoss,
-    weeklyMaxWin: s.weeklyMaxWin,
-    riskProfile: s.riskProfile || "safe",
-    maxDrawdownPercent: s.maxDrawdownPercent,
-    lossStreakHalt: s.lossStreakHalt,
-    haltCooldownMinutes: s.haltCooldownMinutes,
-    sessionFilterEnabled: s.sessionFilterEnabled,
-    htfTrendFilterEnabled: s.htfTrendFilterEnabled,
-    autoDisableStrategies: s.autoDisableStrategies,
-    peakEquity: s.peakEquity,
-    haltedUntil: s.haltedUntil,
-    fullBalanceLiveAcknowledged: s.fullBalanceLiveAcknowledged,
-  });
+    return NextResponse.json({
+      oandaAccountId: s.oandaAccountId || "",
+      oandaEnv: s.oandaEnv,
+      oandaTokenMasked,
+      geminiMasked,
+      discordMasked,
+      hasOandaToken: !!s.oandaTokenEnc,
+      hasGeminiKey: !!s.geminiKeyEnc,
+      geminiModel: s.geminiModel || "gemini-2.5-flash",
+      hasDiscord: !!s.discordWebhookEnc,
+      riskPercent: s.riskPercent,
+      maxUnits: s.maxUnits,
+      minRiskReward: s.minRiskReward,
+      sizingMode: s.sizingMode || "full_balance",
+      balanceUtilization: s.balanceUtilization ?? 100,
+      autoTradeEnabled: s.autoTradeEnabled,
+      autoWatchlist: s.autoWatchlist,
+      autoTimeframe: s.autoTimeframe,
+      autoIntervalMinutes: s.autoIntervalMinutes,
+      autoMinConfidence: s.autoMinConfidence,
+      maxOpenTrades: s.maxOpenTrades,
+      autoMode: s.autoMode || "strategy",
+      enabledStrategies: s.enabledStrategies,
+      strategyMinVotes: s.strategyMinVotes,
+      atrSlMult: s.atrSlMult,
+      atrTpMult: s.atrTpMult,
+      liveAcknowledged: s.liveAcknowledged,
+      liveAutoAcknowledged: s.liveAutoAcknowledged,
+      dailyMaxLoss: s.dailyMaxLoss,
+      dailyMaxWin: s.dailyMaxWin,
+      weeklyMaxLoss: s.weeklyMaxLoss,
+      weeklyMaxWin: s.weeklyMaxWin,
+      riskProfile: s.riskProfile || "safe",
+      maxDrawdownPercent: s.maxDrawdownPercent,
+      lossStreakHalt: s.lossStreakHalt,
+      haltCooldownMinutes: s.haltCooldownMinutes,
+      sessionFilterEnabled: s.sessionFilterEnabled,
+      htfTrendFilterEnabled: s.htfTrendFilterEnabled,
+      autoDisableStrategies: s.autoDisableStrategies,
+      peakEquity: s.peakEquity,
+      haltedUntil: s.haltedUntil,
+      fullBalanceLiveAcknowledged: s.fullBalanceLiveAcknowledged,
+    });
+  } catch (e) {
+    return apiError(e, "Failed to load settings");
+  }
 }
 
 export async function PUT(req: Request) {
-  const body = await req.json();
+  try {
+  const body = await req.json().catch(() => null);
+  if (!body || typeof body !== "object") {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
   const s = await getOrCreateSettings();
 
   const oandaEnv = (body.oandaEnv as OandaEnv) || s.oandaEnv || "practice";
@@ -284,4 +293,7 @@ export async function PUT(req: Request) {
       : null,
     autoTradeEnabled: updated.autoTradeEnabled,
   });
+  } catch (e) {
+    return apiError(e, "Failed to save settings");
+  }
 }

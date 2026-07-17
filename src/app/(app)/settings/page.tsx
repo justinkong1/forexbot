@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { readJson } from "@/lib/http";
 
 interface SettingsState {
   oandaAccountId: string;
@@ -121,7 +122,7 @@ export default function SettingsPage() {
   useEffect(() => {
     void (async () => {
       const res = await fetch("/api/settings");
-      if (res.ok) setS(await res.json());
+      if (res.ok) setS(await readJson<SettingsState>(res));
     })();
   }, []);
 
@@ -141,7 +142,9 @@ export default function SettingsPage() {
           discordWebhook: discordWebhook || undefined,
         }),
       });
-      const data = await res.json();
+      const data = await readJson<{
+        account?: { balance?: string; currency?: string };
+      }>(res);
       if (!res.ok) throw new Error(data.error || "Save failed");
       setMsg(
         data.account
@@ -152,7 +155,7 @@ export default function SettingsPage() {
       setGeminiKey("");
       setDiscordWebhook("");
       const refreshed = await fetch("/api/settings");
-      if (refreshed.ok) setS(await refreshed.json());
+      if (refreshed.ok) setS(await readJson<SettingsState>(refreshed));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed");
     } finally {
@@ -601,7 +604,7 @@ export default function SettingsPage() {
                     });
                     if (res.ok) {
                       const refreshed = await fetch("/api/settings");
-                      if (refreshed.ok) setS(await refreshed.json());
+                      if (refreshed.ok) setS(await readJson<SettingsState>(refreshed));
                       setMsg("Peak equity reset — drawdown now measures from current equity.");
                     }
                   })();

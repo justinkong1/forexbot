@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { readJson } from "@/lib/http";
 
 interface Instrument {
   name: string;
@@ -70,7 +71,7 @@ export default function BacktestPage() {
   const loadInstruments = useCallback(async () => {
     const res = await fetch("/api/oanda/instruments");
     if (!res.ok) return;
-    const data = await res.json();
+    const data = await readJson<{ instruments?: Instrument[] }>(res);
     setInstruments(data.instruments || []);
   }, []);
 
@@ -88,7 +89,7 @@ export default function BacktestPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ instrument, timeframe }),
       });
-      const data = await res.json();
+      const data = await readJson<BacktestResult>(res);
       if (!res.ok) throw new Error(data.error || "Backtest failed");
       setResult(data);
     } catch (e) {

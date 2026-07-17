@@ -2,6 +2,7 @@
 
 import { FormEvent, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
+import { readJson } from "@/lib/http";
 
 function LoginForm() {
   const params = useSearchParams();
@@ -21,7 +22,7 @@ function LoginForm() {
         credentials: "include",
         body: JSON.stringify({ username, password }),
       });
-      const data = await res.json();
+      const data = await readJson(res);
       if (!res.ok) throw new Error(data.error || "Login failed");
       // Full navigation so the session cookie is always sent on the next page
       const next = params.get("from") || "/dashboard";

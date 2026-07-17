@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { readJson } from "@/lib/http";
 
 interface Account {
   balance?: string;
@@ -86,22 +87,26 @@ export default function DashboardPage() {
         fetch("/api/settings"),
         fetch("/api/stats"),
       ]);
-      const settings = await setRes.json();
+      const settings = await readJson<{ hasOandaToken?: boolean }>(setRes);
+      if (!setRes.ok) {
+        setError(settings.error || "Failed to load settings");
+        return;
+      }
       if (!settings.hasOandaToken) {
         setConfigured(false);
         setAccount(null);
       } else {
         setConfigured(true);
-        if (accRes.ok) setAccount(await accRes.json());
+        if (accRes.ok) setAccount(await readJson<Account>(accRes));
         else {
-          const e = await accRes.json();
+          const e = await readJson(accRes);
           setError(e.error || "Account error");
         }
       }
-      if (limRes.ok) setLimits(await limRes.json());
-      if (autoRes.ok) setAuto(await autoRes.json());
+      if (limRes.ok) setLimits(await readJson<Limits>(limRes));
+      if (autoRes.ok) setAuto(await readJson<AutoStatus>(autoRes));
       if (statsRes.ok) {
-        const data = await statsRes.json();
+        const data = await readJson<{ strategies?: StrategyStat[] }>(statsRes);
         setStats(data.strategies || []);
       }
     } catch (e) {
@@ -140,7 +145,10 @@ export default function DashboardPage() {
                     headers: { "Content-Type": "application/json" },
                     body: "{}",
                   });
-                  const data = await res.json();
+                  const data = await readJson<{
+                    instrument?: string;
+                    unrealizedPl?: number;
+                  }>(res);
                   if (!res.ok) throw new Error(data.error || "Failed");
                   setDiscordMsg(
                     `Sent ${data.instrument} to Discord (uPL ${Number(data.unrealizedPl).toFixed(2)})`,

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { readJson } from "@/lib/http";
 
 interface Trade {
   id: string;
@@ -36,7 +37,7 @@ export default function HistoryPage() {
     if (outcome) sp.set("outcome", outcome);
     if (instrument) sp.set("instrument", instrument);
     const res = await fetch(`/api/trades/history?${sp.toString()}`);
-    const data = await res.json();
+    const data = await readJson<{ trades?: Trade[] }>(res);
     if (!res.ok) {
       setError(data.error || "Failed to load");
       return;
@@ -49,7 +50,10 @@ export default function HistoryPage() {
     void (async () => {
       const res = await fetch("/api/auto-trade");
       if (res.ok) {
-        const d = await res.json();
+        const d = await readJson<{
+          enabled?: boolean;
+          runtime?: { lastStatus?: string };
+        }>(res);
         setAutoRuntime(
           d.enabled
             ? `Auto on · ${d.runtime?.lastStatus || "—"}`
@@ -65,7 +69,7 @@ export default function HistoryPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "run_now" }),
     });
-    const data = await res.json();
+    const data = await readJson<{ runtime?: { lastStatus?: string } }>(res);
     if (!res.ok) {
       setError(data.error || "Run failed");
       return;
