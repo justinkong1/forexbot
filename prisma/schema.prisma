@@ -47,6 +47,22 @@ model Settings {
   peakEquity           Float?
   haltedUntil          DateTime?
   fullBalanceLiveAcknowledged Boolean @default(false)
+  dayEnabled           Boolean  @default(true)
+  dayWatchlist         String   @default("EUR_USD,USD_JPY,GBP_USD")
+  dayTimeframe         String   @default("M15")
+  dayIntervalMinutes   Int      @default(15)
+  dayStrategies        String   @default("ema_cross,rsi_reversion,macd_cross,bb_bounce")
+  dayAtrSlMult         Float    @default(1.5)
+  dayAtrTpMult         Float    @default(2.5)
+  dayMaxOpenTrades     Int      @default(2)
+  swingEnabled         Boolean  @default(false)
+  swingWatchlist       String   @default("EUR_USD,GBP_USD,AUD_USD")
+  swingTimeframe       String   @default("H4")
+  swingIntervalMinutes Int      @default(240)
+  swingStrategies      String   @default("donchian_break,htf_pullback,ema_cross,macd_cross")
+  swingAtrSlMult       Float    @default(2.5)
+  swingAtrTpMult       Float    @default(5)
+  swingMaxOpenTrades   Int      @default(1)
   updatedAt            DateTime @updatedAt
 }
 
@@ -72,4 +88,5 @@ model TradeJournal {
   timeframe    String?
   skipReason   String?
   strategyId   String?
+  style        String?
 }

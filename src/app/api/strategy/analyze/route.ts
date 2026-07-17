@@ -13,11 +13,12 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const instrument = String(body.instrument || "");
     const timeframe = (body.timeframe || "H1") as CandleGranularity;
+    const style = body.style === "swing" ? "swing" : "day";
     if (!instrument) {
       return NextResponse.json({ error: "instrument required" }, { status: 400 });
     }
     const limits = await getLimitStatus();
-    const result = await analyzeStrategies({ instrument, timeframe });
+    const result = await analyzeStrategies({ instrument, timeframe, style });
     return NextResponse.json({ ...result, candles: undefined, limits });
   } catch (e) {
     return NextResponse.json(

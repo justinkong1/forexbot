@@ -115,6 +115,7 @@ export async function notifyTradeOpened(
     rr?: number | null;
     balance?: number | null;
     sizingMode?: string | null;
+    style?: string | null;
   },
 ) {
   const digits = pairDigits(trade.instrument);
@@ -135,6 +136,13 @@ export async function notifyTradeOpened(
     { name: "Source", value: trade.source },
     { name: "Confidence", value: conf },
   ];
+
+  if (trade.style) {
+    fields.push({
+      name: "Style",
+      value: trade.style === "swing" ? "Swing trade" : "Day trade",
+    });
+  }
 
   if (trade.rr != null) {
     fields.push({ name: "R:R", value: trade.rr.toFixed(2) });
@@ -184,6 +192,7 @@ export async function notifyTradeClosed(
     rationale?: string | null;
     lesson?: string | null;
     confidence?: number | null;
+    style?: string | null;
   },
 ) {
   const digits = pairDigits(trade.instrument);
@@ -226,6 +235,12 @@ export async function notifyTradeClosed(
     { name: "Source", value: trade.source },
   ];
 
+  if (trade.style) {
+    fields.push({
+      name: "Style",
+      value: trade.style === "swing" ? "Swing trade" : "Day trade",
+    });
+  }
   if (trade.confidence != null) {
     fields.push({
       name: "Confidence",

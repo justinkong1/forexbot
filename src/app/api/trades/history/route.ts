@@ -10,6 +10,7 @@ export async function GET(req: NextRequest) {
     const source = sp.get("source");
     const outcome = sp.get("outcome");
     const instrument = sp.get("instrument");
+    const style = sp.get("style");
     const from = sp.get("from");
     const to = sp.get("to");
 
@@ -17,6 +18,7 @@ export async function GET(req: NextRequest) {
     if (source) where.source = source;
     if (outcome) where.outcome = outcome;
     if (instrument) where.instrument = instrument;
+    if (style === "day" || style === "swing") where.style = style;
     if (from || to) {
       where.createdAt = {};
       if (from)

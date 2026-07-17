@@ -16,6 +16,7 @@ export async function POST(req: NextRequest) {
       source,
       instrument: String(body.instrument),
       timeframe: String(body.timeframe || "H1"),
+      style: body.style === "swing" ? "swing" : "day",
       side,
       units: body.units != null ? Number(body.units) : undefined,
       takeProfit: Number(body.takeProfit),

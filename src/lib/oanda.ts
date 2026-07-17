@@ -88,7 +88,7 @@ export async function getInstrumentDetails(
   return data.instruments[0] ?? null;
 }
 
-export type CandleGranularity = "M5" | "M15" | "H1" | "H4" | "D";
+export type CandleGranularity = "M5" | "M15" | "M30" | "H1" | "H4" | "D";
 
 export interface Candle {
   time: string;

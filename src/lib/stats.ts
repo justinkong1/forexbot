@@ -1,9 +1,10 @@
 import { prisma } from "./db";
-import { STRATEGY_CATALOG } from "./strategies";
+import { STRATEGY_CATALOG, type TradeStyle } from "./strategies";
 
 export interface StrategyStats {
   strategyId: string;
   name: string;
+  style: TradeStyle | "all";
   trades: number;
   wins: number;
   losses: number;
@@ -24,7 +25,7 @@ export const MIN_TRADES_TO_JUDGE = 10;
 
 function computeFromRows(
   rows: Array<{ realizedPl: number | null; outcome: string }>,
-): Omit<StrategyStats, "strategyId" | "name" | "autoDisabled"> {
+): Omit<StrategyStats, "strategyId" | "name" | "autoDisabled" | "style"> {
   const closed = rows.filter((r) => r.realizedPl != null);
   const wins = closed.filter((r) => r.outcome === "win");
   const losses = closed.filter((r) => r.outcome === "loss");
@@ -76,11 +77,17 @@ function computeFromRows(
   };
 }
 
-/** Per-strategy stats over the most recent closed trades (windowed) */
+/**
+ * Per-strategy stats over the most recent closed trades (windowed).
+ * When a style is given, only trades of that style count — a strategy
+ * can be benched for day trading but stay live for swing.
+ */
 export async function getStrategyStats(params?: {
   autoDisableEnabled?: boolean;
+  style?: TradeStyle;
 }): Promise<StrategyStats[]> {
   const autoDisable = params?.autoDisableEnabled ?? true;
+  const style = params?.style;
   const ids = [...STRATEGY_CATALOG.map((s) => s.id), "ai"] as string[];
   const out: StrategyStats[] = [];
 
@@ -89,6 +96,7 @@ export async function getStrategyStats(params?: {
       where: {
         outcome: { in: ["win", "loss", "breakeven"] },
         realizedPl: { not: null },
+        ...(style ? { style } : {}),
         OR: [
           { strategyId: id },
           // Legacy rows without strategyId: attribute AI rows by source
@@ -108,6 +116,7 @@ export async function getStrategyStats(params?: {
       strategyId: id,
       name: catalog?.name || (id === "ai" ? "Gemini AI" : id),
       ...base,
+      style: style ?? "all",
       autoDisabled: autoDisable && base.verdict === "losing",
     });
   }
@@ -115,9 +124,11 @@ export async function getStrategyStats(params?: {
   return out;
 }
 
-/** Strategy ids the auto-trade worker should skip right now */
-export async function getDisabledStrategyIds(): Promise<string[]> {
-  const stats = await getStrategyStats({ autoDisableEnabled: true });
+/** Strategy ids the auto-trade worker should skip right now (per lane) */
+export async function getDisabledStrategyIds(
+  style?: TradeStyle,
+): Promise<string[]> {
+  const stats = await getStrategyStats({ autoDisableEnabled: true, style });
   return stats
     .filter((s) => s.autoDisabled && s.strategyId !== "ai")
     .map((s) => s.strategyId);

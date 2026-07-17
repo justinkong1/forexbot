@@ -31,9 +31,30 @@ interface Limits {
   haltedUntil: string | null;
 }
 
+interface LaneRuntime {
+  lastStatus: string;
+  lastRunAt: string | null;
+  lastError: string | null;
+}
+
+interface LaneInfo {
+  enabled: boolean;
+  timeframe: string;
+  intervalMinutes: number;
+  watchlist: string[];
+  maxOpenTrades: number;
+  openTrades: number;
+}
+
 interface AutoStatus {
   enabled: boolean;
-  runtime: { lastStatus: string; lastRunAt: string | null; lastError: string | null };
+  runtime: {
+    lastStatus: string;
+    lastRunAt: string | null;
+    lastError: string | null;
+    lanes?: { day: LaneRuntime; swing: LaneRuntime };
+  };
+  lanes?: { day: LaneInfo; swing: LaneInfo };
 }
 
 interface StrategyStat {
@@ -72,6 +93,9 @@ export default function DashboardPage() {
   const [limits, setLimits] = useState<Limits | null>(null);
   const [auto, setAuto] = useState<AutoStatus | null>(null);
   const [stats, setStats] = useState<StrategyStat[] | null>(null);
+  const [dayStats, setDayStats] = useState<StrategyStat[] | null>(null);
+  const [swingStats, setSwingStats] = useState<StrategyStat[] | null>(null);
+  const [statsView, setStatsView] = useState<"all" | "day" | "swing">("all");
   const [configured, setConfigured] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [discordMsg, setDiscordMsg] = useState<string | null>(null);
@@ -106,8 +130,14 @@ export default function DashboardPage() {
       if (limRes.ok) setLimits(await readJson<Limits>(limRes));
       if (autoRes.ok) setAuto(await readJson<AutoStatus>(autoRes));
       if (statsRes.ok) {
-        const data = await readJson<{ strategies?: StrategyStat[] }>(statsRes);
+        const data = await readJson<{
+          strategies?: StrategyStat[];
+          day?: StrategyStat[];
+          swing?: StrategyStat[];
+        }>(statsRes);
         setStats(data.strategies || []);
+        setDayStats(data.day || null);
+        setSwingStats(data.swing || null);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
@@ -222,14 +252,41 @@ export default function DashboardPage() {
               <span className="badge">Off</span>
             )}
           </div>
-          <div className="text-sm text-[var(--ink-soft)]">
-            Status: {auto?.runtime?.lastStatus ?? "—"}
-          </div>
-          <div className="mt-1 text-xs text-[var(--ink-soft)]">
-            Last run: {auto?.runtime?.lastRunAt
-              ? new Date(auto.runtime.lastRunAt).toLocaleString()
-              : "never"}
-          </div>
+          {auto?.lanes ? (
+            <div className="space-y-2 text-sm">
+              {(["day", "swing"] as const).map((laneId) => {
+                const lane = auto.lanes![laneId];
+                const rt = auto.runtime?.lanes?.[laneId];
+                return (
+                  <div
+                    key={laneId}
+                    className="flex flex-wrap items-center gap-2"
+                  >
+                    <span className={`badge ${lane.enabled ? "badge-auto" : ""}`}>
+                      {laneId === "day" ? "Day" : "Swing"}
+                    </span>
+                    <span className="text-xs text-[var(--ink-soft)]">
+                      {lane.enabled
+                        ? `${lane.timeframe} · every ${lane.intervalMinutes}m · ${lane.openTrades}/${lane.maxOpenTrades} open`
+                        : "off"}
+                    </span>
+                    {lane.enabled && rt && (
+                      <span className="text-xs text-[var(--ink-soft)]">
+                        · {rt.lastStatus}
+                        {rt.lastRunAt
+                          ? ` (${new Date(rt.lastRunAt).toLocaleTimeString()})`
+                          : ""}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-sm text-[var(--ink-soft)]">
+              Status: {auto?.runtime?.lastStatus ?? "—"}
+            </div>
+          )}
           {auto?.runtime?.lastError && (
             <div className="mt-2 text-xs text-[var(--danger)]">
               {auto.runtime.lastError}
@@ -376,6 +433,24 @@ export default function DashboardPage() {
             <span className="text-xs text-[var(--ink-soft)]">
               Last 30 closed trades per strategy
             </span>
+            <div className="ml-auto flex gap-1">
+              {(
+                [
+                  ["all", "All"],
+                  ["day", "Day"],
+                  ["swing", "Swing"],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={`btn text-xs ${statsView === id ? "btn-primary" : "btn-ghost"}`}
+                  onClick={() => setStatsView(id)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[560px] text-left text-sm">
@@ -391,7 +466,12 @@ export default function DashboardPage() {
                 </tr>
               </thead>
               <tbody>
-                {stats.map((st) => {
+                {(statsView === "day"
+                  ? (dayStats ?? stats)
+                  : statsView === "swing"
+                    ? (swingStats ?? stats)
+                    : stats
+                ).map((st) => {
                   const v = statVerdict(st);
                   return (
                     <tr
@@ -434,6 +514,12 @@ export default function DashboardPage() {
               </tbody>
             </table>
           </div>
+          {statsView !== "all" && (
+            <p className="mt-3 text-xs text-[var(--ink-soft)]">
+              Benching is judged per style — a strategy losing at day trading
+              can stay live for swing, and vice versa.
+            </p>
+          )}
         </div>
       )}
 

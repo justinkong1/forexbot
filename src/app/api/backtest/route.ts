@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { loadCredentials } from "@/lib/credentials";
 import { runBacktest } from "@/lib/backtest";
 import { parseEnabledStrategies } from "@/lib/strategies";
+import { laneConfig } from "@/lib/execute";
 import type { CandleGranularity } from "@/lib/oanda";
 
 export async function POST(req: NextRequest) {
@@ -16,8 +17,11 @@ export async function POST(req: NextRequest) {
     }
     const instrument = String(body.instrument || "EUR_USD");
     const timeframe = (body.timeframe || "H1") as CandleGranularity;
+    const style = body.style === "swing" ? "swing" : "day";
+    const lane = laneConfig(settings, style);
     const strategyIds = parseEnabledStrategies(
-      body.strategies ? String(body.strategies) : null,
+      body.strategies ? String(body.strategies) : lane.strategiesCsv,
+      style,
     );
 
     const result = await runBacktest({
@@ -25,8 +29,8 @@ export async function POST(req: NextRequest) {
       instrument,
       timeframe,
       strategyIds,
-      atrSlMult: settings.atrSlMult,
-      atrTpMult: settings.atrTpMult,
+      atrSlMult: lane.atrSlMult,
+      atrTpMult: lane.atrTpMult,
       barCount: body.bars ? Number(body.bars) : 500,
     });
 
@@ -34,6 +38,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ...result,
       trades: result.trades.slice(-50),
+      style,
     });
   } catch (e) {
     return NextResponse.json(

@@ -43,10 +43,21 @@ interface PendingTrade {
   sellVotes?: number;
 }
 
+const STYLE_TIMEFRAMES: Record<"day" | "swing", string[]> = {
+  day: ["M5", "M15", "M30", "H1"],
+  swing: ["H1", "H4", "D"],
+};
+
+const STYLE_DEFAULT_TF: Record<"day" | "swing", string> = {
+  day: "M15",
+  swing: "H4",
+};
+
 export default function TradePage() {
   const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [instrument, setInstrument] = useState("EUR_USD");
-  const [timeframe, setTimeframe] = useState("H1");
+  const [style, setStyle] = useState<"day" | "swing">("day");
+  const [timeframe, setTimeframe] = useState("M15");
   const [candles, setCandles] = useState<ChartCandle[]>([]);
   const [pending, setPending] = useState<PendingTrade | null>(null);
   const [tp, setTp] = useState("");
@@ -120,7 +131,7 @@ export default function TradePage() {
       const res = await fetch("/api/strategy/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ instrument, timeframe }),
+        body: JSON.stringify({ instrument, timeframe, style }),
       });
       const data = await readJson<{
         limits?: { halted?: boolean; message?: string | null };
@@ -180,7 +191,7 @@ export default function TradePage() {
       const res = await fetch("/api/ai/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ instrument, timeframe }),
+        body: JSON.stringify({ instrument, timeframe, style }),
       });
       const data = await readJson<{
         limits?: { halted?: boolean; message?: string | null };
@@ -227,6 +238,7 @@ export default function TradePage() {
           source: pending.source,
           instrument,
           timeframe,
+          style,
           side: pending.signal.bias,
           takeProfit: Number(tp),
           stopLoss: Number(sl),
@@ -269,6 +281,26 @@ export default function TradePage() {
       </div>
 
       <div className="panel flex flex-wrap items-end gap-3 p-4">
+        <div className="min-w-[10rem]">
+          <label className="label">Style</label>
+          <div className="flex gap-1">
+            {(["day", "swing"] as const).map((st) => (
+              <button
+                key={st}
+                type="button"
+                className={`btn ${style === st ? "btn-primary" : "btn-ghost"}`}
+                onClick={() => {
+                  if (style === st) return;
+                  setStyle(st);
+                  setTimeframe(STYLE_DEFAULT_TF[st]);
+                  setPending(null);
+                }}
+              >
+                {st === "day" ? "Day" : "Swing"}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="min-w-[10rem] flex-1">
           <label className="label">Pair</label>
           <select
@@ -299,7 +331,7 @@ export default function TradePage() {
               setPending(null);
             }}
           >
-            {["M5", "M15", "H1", "H4", "D"].map((t) => (
+            {STYLE_TIMEFRAMES[style].map((t) => (
               <option key={t} value={t}>
                 {t}
               </option>

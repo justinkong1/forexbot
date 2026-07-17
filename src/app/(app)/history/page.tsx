@@ -20,6 +20,7 @@ interface Trade {
   skipReason: string | null;
   lesson: string | null;
   timeframe: string | null;
+  style: string | null;
 }
 
 export default function HistoryPage() {
@@ -27,6 +28,7 @@ export default function HistoryPage() {
   const [source, setSource] = useState("");
   const [outcome, setOutcome] = useState("");
   const [instrument, setInstrument] = useState("");
+  const [style, setStyle] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [autoRuntime, setAutoRuntime] = useState<string>("");
 
@@ -36,6 +38,7 @@ export default function HistoryPage() {
     if (source) sp.set("source", source);
     if (outcome) sp.set("outcome", outcome);
     if (instrument) sp.set("instrument", instrument);
+    if (style) sp.set("style", style);
     const res = await fetch(`/api/trades/history?${sp.toString()}`);
     const data = await readJson<{ trades?: Trade[] }>(res);
     if (!res.ok) {
@@ -43,7 +46,7 @@ export default function HistoryPage() {
       return;
     }
     setTrades(data.trades || []);
-  }, [source, outcome, instrument]);
+  }, [source, outcome, instrument, style]);
 
   useEffect(() => {
     void load();
@@ -98,7 +101,15 @@ export default function HistoryPage() {
         </div>
       </div>
 
-      <div className="panel grid gap-3 p-4 md:grid-cols-4">
+      <div className="panel grid gap-3 p-4 md:grid-cols-5">
+        <div>
+          <label className="label">Style</label>
+          <select className="select" value={style} onChange={(e) => setStyle(e.target.value)}>
+            <option value="">All</option>
+            <option value="day">Day</option>
+            <option value="swing">Swing</option>
+          </select>
+        </div>
         <div>
           <label className="label">Source</label>
           <select className="select" value={source} onChange={(e) => setSource(e.target.value)}>
@@ -160,6 +171,11 @@ export default function HistoryPage() {
               </span>
               <span className="mono font-semibold">{t.instrument}</span>
               {t.side && <span className="mono text-sm">{t.side}</span>}
+              {t.style && (
+                <span className="badge">
+                  {t.style === "swing" ? "swing" : "day"}
+                </span>
+              )}
               {t.timeframe && (
                 <span className="text-xs text-[var(--ink-soft)]">{t.timeframe}</span>
               )}

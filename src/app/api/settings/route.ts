@@ -72,6 +72,22 @@ export async function GET() {
       peakEquity: s.peakEquity,
       haltedUntil: s.haltedUntil,
       fullBalanceLiveAcknowledged: s.fullBalanceLiveAcknowledged,
+      dayEnabled: s.dayEnabled,
+      dayWatchlist: s.dayWatchlist,
+      dayTimeframe: s.dayTimeframe,
+      dayIntervalMinutes: s.dayIntervalMinutes,
+      dayStrategies: s.dayStrategies,
+      dayAtrSlMult: s.dayAtrSlMult,
+      dayAtrTpMult: s.dayAtrTpMult,
+      dayMaxOpenTrades: s.dayMaxOpenTrades,
+      swingEnabled: s.swingEnabled,
+      swingWatchlist: s.swingWatchlist,
+      swingTimeframe: s.swingTimeframe,
+      swingIntervalMinutes: s.swingIntervalMinutes,
+      swingStrategies: s.swingStrategies,
+      swingAtrSlMult: s.swingAtrSlMult,
+      swingAtrTpMult: s.swingAtrTpMult,
+      swingMaxOpenTrades: s.swingMaxOpenTrades,
     });
   } catch (e) {
     return apiError(e, "Failed to load settings");
@@ -196,6 +212,51 @@ export async function PUT(req: Request) {
         : s.autoDisableStrategies,
     fullBalanceLiveAcknowledged:
       !!body.fullBalanceLiveAcknowledged || s.fullBalanceLiveAcknowledged,
+    dayEnabled: body.dayEnabled != null ? !!body.dayEnabled : s.dayEnabled,
+    dayWatchlist: String(body.dayWatchlist ?? s.dayWatchlist),
+    dayTimeframe: ["M5", "M15", "M30", "H1"].includes(String(body.dayTimeframe))
+      ? String(body.dayTimeframe)
+      : s.dayTimeframe,
+    dayIntervalMinutes: Math.max(
+      5,
+      Number(body.dayIntervalMinutes ?? s.dayIntervalMinutes),
+    ),
+    dayStrategies: String(body.dayStrategies ?? s.dayStrategies),
+    dayAtrSlMult: Math.min(
+      10,
+      Math.max(0.5, Number(body.dayAtrSlMult ?? s.dayAtrSlMult)),
+    ),
+    dayAtrTpMult: Math.min(
+      20,
+      Math.max(0.5, Number(body.dayAtrTpMult ?? s.dayAtrTpMult)),
+    ),
+    dayMaxOpenTrades: Math.min(
+      10,
+      Math.max(1, Number(body.dayMaxOpenTrades ?? s.dayMaxOpenTrades)),
+    ),
+    swingEnabled:
+      body.swingEnabled != null ? !!body.swingEnabled : s.swingEnabled,
+    swingWatchlist: String(body.swingWatchlist ?? s.swingWatchlist),
+    swingTimeframe: ["H1", "H4", "D"].includes(String(body.swingTimeframe))
+      ? String(body.swingTimeframe)
+      : s.swingTimeframe,
+    swingIntervalMinutes: Math.max(
+      30,
+      Number(body.swingIntervalMinutes ?? s.swingIntervalMinutes),
+    ),
+    swingStrategies: String(body.swingStrategies ?? s.swingStrategies),
+    swingAtrSlMult: Math.min(
+      10,
+      Math.max(0.5, Number(body.swingAtrSlMult ?? s.swingAtrSlMult)),
+    ),
+    swingAtrTpMult: Math.min(
+      20,
+      Math.max(0.5, Number(body.swingAtrTpMult ?? s.swingAtrTpMult)),
+    ),
+    swingMaxOpenTrades: Math.min(
+      10,
+      Math.max(1, Number(body.swingMaxOpenTrades ?? s.swingMaxOpenTrades)),
+    ),
   };
 
   // Preset overrides: writing a preset pins its guardrail values

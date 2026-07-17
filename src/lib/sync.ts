@@ -78,6 +78,7 @@ export async function syncClosedTrades() {
       rationale: row.rationale,
       lesson,
       confidence: row.confidence,
+      style: row.style,
     });
 
     updated += 1;

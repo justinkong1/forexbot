@@ -44,6 +44,183 @@ interface SettingsState {
   autoDisableStrategies: boolean;
   peakEquity: number | null;
   fullBalanceLiveAcknowledged: boolean;
+  dayEnabled: boolean;
+  dayWatchlist: string;
+  dayTimeframe: string;
+  dayIntervalMinutes: number;
+  dayStrategies: string;
+  dayAtrSlMult: number;
+  dayAtrTpMult: number;
+  dayMaxOpenTrades: number;
+  swingEnabled: boolean;
+  swingWatchlist: string;
+  swingTimeframe: string;
+  swingIntervalMinutes: number;
+  swingStrategies: string;
+  swingAtrSlMult: number;
+  swingAtrTpMult: number;
+  swingMaxOpenTrades: number;
+}
+
+interface LaneValues {
+  enabled: boolean;
+  watchlist: string;
+  timeframe: string;
+  intervalMinutes: number;
+  strategies: string;
+  atrSlMult: number;
+  atrTpMult: number;
+  maxOpenTrades: number;
+}
+
+const STRATEGY_OPTIONS: Array<{
+  id: string;
+  label: string;
+  styles: Array<"day" | "swing">;
+}> = [
+  { id: "ema_cross", label: "EMA Cross + Trend", styles: ["day", "swing"] },
+  { id: "rsi_reversion", label: "RSI Pullback", styles: ["day"] },
+  { id: "macd_cross", label: "MACD Momentum", styles: ["day", "swing"] },
+  { id: "bb_bounce", label: "Bollinger Bounce", styles: ["day"] },
+  { id: "donchian_break", label: "Donchian Breakout", styles: ["swing"] },
+  { id: "htf_pullback", label: "Trend Pullback", styles: ["swing"] },
+];
+
+function LaneCard(props: {
+  style: "day" | "swing";
+  title: string;
+  blurb: string;
+  timeframes: string[];
+  minInterval: number;
+  values: LaneValues;
+  onChange: (patch: Partial<LaneValues>) => void;
+}) {
+  const { values, onChange } = props;
+  const options = STRATEGY_OPTIONS.filter((o) =>
+    o.styles.includes(props.style),
+  );
+  return (
+    <div
+      className={`panel space-y-4 p-4 md:p-5 ${values.enabled ? "" : "opacity-70"}`}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="display text-lg">{props.title}</h3>
+          <p className="text-xs text-[var(--ink-soft)]">{props.blurb}</p>
+        </div>
+        <label className="flex items-center gap-2 text-sm font-semibold">
+          <input
+            type="checkbox"
+            checked={values.enabled}
+            onChange={(e) => onChange({ enabled: e.target.checked })}
+          />
+          Enabled
+        </label>
+      </div>
+      <div>
+        <label className="label">Watchlist (comma-separated)</label>
+        <input
+          className="input mono"
+          value={values.watchlist}
+          onChange={(e) => onChange({ watchlist: e.target.value })}
+        />
+      </div>
+      <div className="grid gap-4 md:grid-cols-3">
+        <div>
+          <label className="label">Timeframe</label>
+          <select
+            className="select"
+            value={values.timeframe}
+            onChange={(e) => onChange({ timeframe: e.target.value })}
+          >
+            {props.timeframes.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="label">Scan every (min)</label>
+          <input
+            className="input mono"
+            type="number"
+            min={props.minInterval}
+            value={values.intervalMinutes}
+            onChange={(e) =>
+              onChange({ intervalMinutes: Number(e.target.value) })
+            }
+          />
+        </div>
+        <div>
+          <label className="label">Max open trades</label>
+          <input
+            className="input mono"
+            type="number"
+            min={1}
+            max={10}
+            value={values.maxOpenTrades}
+            onChange={(e) =>
+              onChange({ maxOpenTrades: Number(e.target.value) })
+            }
+          />
+        </div>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <div>
+          <label className="label">ATR SL mult</label>
+          <input
+            className="input mono"
+            type="number"
+            step="0.1"
+            value={values.atrSlMult}
+            onChange={(e) => onChange({ atrSlMult: Number(e.target.value) })}
+          />
+        </div>
+        <div>
+          <label className="label">ATR TP mult</label>
+          <input
+            className="input mono"
+            type="number"
+            step="0.1"
+            value={values.atrTpMult}
+            onChange={(e) => onChange({ atrTpMult: Number(e.target.value) })}
+          />
+        </div>
+      </div>
+      <div>
+        <label className="label">Strategies</label>
+        <div className="space-y-2 text-sm">
+          {options.map((st) => {
+            const enabled = values.strategies
+              .split(",")
+              .map((x) => x.trim())
+              .includes(st.id);
+            return (
+              <label key={st.id} className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={enabled}
+                  onChange={(e) => {
+                    const set = new Set(
+                      values.strategies
+                        .split(",")
+                        .map((x) => x.trim())
+                        .filter(Boolean),
+                    );
+                    if (e.target.checked) set.add(st.id);
+                    else set.delete(st.id);
+                    onChange({ strategies: Array.from(set).join(",") });
+                  }}
+                />
+                {st.label}
+              </label>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 const empty: SettingsState = {
@@ -87,6 +264,22 @@ const empty: SettingsState = {
   autoDisableStrategies: true,
   peakEquity: null,
   fullBalanceLiveAcknowledged: false,
+  dayEnabled: true,
+  dayWatchlist: "EUR_USD,USD_JPY,GBP_USD",
+  dayTimeframe: "M15",
+  dayIntervalMinutes: 15,
+  dayStrategies: "ema_cross,rsi_reversion,macd_cross,bb_bounce",
+  dayAtrSlMult: 1.5,
+  dayAtrTpMult: 2.5,
+  dayMaxOpenTrades: 2,
+  swingEnabled: false,
+  swingWatchlist: "EUR_USD,GBP_USD,AUD_USD",
+  swingTimeframe: "H4",
+  swingIntervalMinutes: 240,
+  swingStrategies: "donchian_break,htf_pullback,ema_cross,macd_cross",
+  swingAtrSlMult: 2.5,
+  swingAtrTpMult: 5,
+  swingMaxOpenTrades: 1,
 };
 
 const PROFILE_CARDS = [
@@ -716,61 +909,22 @@ export default function SettingsPage() {
               </span>
             </label>
           )}
-          <div>
-            <label className="label">Detection mode</label>
-            <select
-              className="select"
-              value={s.autoMode}
-              onChange={(e) => setS({ ...s, autoMode: e.target.value })}
-            >
-              <option value="strategy">Strategies only (no AI)</option>
-              <option value="ai">Gemini AI only</option>
-              <option value="both">Strategies first, then AI fallback</option>
-            </select>
-            <p className="mt-1 text-xs text-[var(--ink-soft)]">
-              Strategies use local EMA/RSI/MACD/Bollinger rules — no Gemini key needed.
-            </p>
-          </div>
-          <div>
-            <label className="label">Enabled strategies</label>
-            <div className="space-y-2 text-sm">
-              {[
-                { id: "ema_cross", label: "EMA Cross + Trend" },
-                { id: "rsi_reversion", label: "RSI Pullback" },
-                { id: "macd_cross", label: "MACD Momentum" },
-                { id: "bb_bounce", label: "Bollinger Bounce" },
-              ].map((st) => {
-                const enabled = s.enabledStrategies
-                  .split(",")
-                  .map((x) => x.trim())
-                  .includes(st.id);
-                return (
-                  <label key={st.id} className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={enabled}
-                      onChange={(e) => {
-                        const set = new Set(
-                          s.enabledStrategies
-                            .split(",")
-                            .map((x) => x.trim())
-                            .filter(Boolean),
-                        );
-                        if (e.target.checked) set.add(st.id);
-                        else set.delete(st.id);
-                        setS({
-                          ...s,
-                          enabledStrategies: Array.from(set).join(","),
-                        });
-                      }}
-                    />
-                    {st.label}
-                  </label>
-                );
-              })}
-            </div>
-          </div>
           <div className="grid gap-4 md:grid-cols-3">
+            <div>
+              <label className="label">Detection mode</label>
+              <select
+                className="select"
+                value={s.autoMode}
+                onChange={(e) => setS({ ...s, autoMode: e.target.value })}
+              >
+                <option value="strategy">Strategies only (no AI)</option>
+                <option value="ai">Gemini AI only</option>
+                <option value="both">Strategies first, then AI fallback</option>
+              </select>
+              <p className="mt-1 text-xs text-[var(--ink-soft)]">
+                Strategies use local indicator rules — no Gemini key needed.
+              </p>
+            </div>
             <div>
               <label className="label">Min strategy votes</label>
               <input
@@ -789,66 +943,6 @@ export default function SettingsPage() {
               </p>
             </div>
             <div>
-              <label className="label">ATR SL mult</label>
-              <input
-                className="input mono"
-                type="number"
-                step="0.1"
-                value={s.atrSlMult}
-                onChange={(e) =>
-                  setS({ ...s, atrSlMult: Number(e.target.value) })
-                }
-              />
-            </div>
-            <div>
-              <label className="label">ATR TP mult</label>
-              <input
-                className="input mono"
-                type="number"
-                step="0.1"
-                value={s.atrTpMult}
-                onChange={(e) =>
-                  setS({ ...s, atrTpMult: Number(e.target.value) })
-                }
-              />
-            </div>
-          </div>
-          <div>
-            <label className="label">Watchlist (comma-separated)</label>
-            <input
-              className="input mono"
-              value={s.autoWatchlist}
-              onChange={(e) => setS({ ...s, autoWatchlist: e.target.value })}
-            />
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <label className="label">Timeframe</label>
-              <select
-                className="select"
-                value={s.autoTimeframe}
-                onChange={(e) => setS({ ...s, autoTimeframe: e.target.value })}
-              >
-                {["M5", "M15", "H1", "H4", "D"].map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="label">Scan interval (minutes)</label>
-              <input
-                className="input mono"
-                type="number"
-                min={5}
-                value={s.autoIntervalMinutes}
-                onChange={(e) =>
-                  setS({ ...s, autoIntervalMinutes: Number(e.target.value) })
-                }
-              />
-            </div>
-            <div>
               <label className="label">Min confidence</label>
               <input
                 className="input mono"
@@ -863,6 +957,111 @@ export default function SettingsPage() {
               />
             </div>
           </div>
+        </section>
+
+        <section className="panel space-y-4 p-5 md:p-6">
+          <h2 className="display text-xl">Trading styles</h2>
+          <p className="text-sm text-[var(--ink-soft)]">
+            Day trading takes multiple quick trades during the session; swing
+            trading holds fewer positions for days to weeks. Run either or
+            both — each lane has its own watchlist, pace, and strategies.
+            Kill switches, risk sizing, and the correlation guard stay shared.
+          </p>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <LaneCard
+              style="day"
+              title="Day trading"
+              blurb="Fast timeframes, tight ATR targets — trades usually resolve within hours."
+              timeframes={["M5", "M15", "M30", "H1"]}
+              minInterval={5}
+              values={{
+                enabled: s.dayEnabled,
+                watchlist: s.dayWatchlist,
+                timeframe: s.dayTimeframe,
+                intervalMinutes: s.dayIntervalMinutes,
+                strategies: s.dayStrategies,
+                atrSlMult: s.dayAtrSlMult,
+                atrTpMult: s.dayAtrTpMult,
+                maxOpenTrades: s.dayMaxOpenTrades,
+              }}
+              onChange={(patch) =>
+                setS((prev) => ({
+                  ...prev,
+                  ...(patch.enabled != null && { dayEnabled: patch.enabled }),
+                  ...(patch.watchlist != null && {
+                    dayWatchlist: patch.watchlist,
+                  }),
+                  ...(patch.timeframe != null && {
+                    dayTimeframe: patch.timeframe,
+                  }),
+                  ...(patch.intervalMinutes != null && {
+                    dayIntervalMinutes: patch.intervalMinutes,
+                  }),
+                  ...(patch.strategies != null && {
+                    dayStrategies: patch.strategies,
+                  }),
+                  ...(patch.atrSlMult != null && {
+                    dayAtrSlMult: patch.atrSlMult,
+                  }),
+                  ...(patch.atrTpMult != null && {
+                    dayAtrTpMult: patch.atrTpMult,
+                  }),
+                  ...(patch.maxOpenTrades != null && {
+                    dayMaxOpenTrades: patch.maxOpenTrades,
+                  }),
+                }))
+              }
+            />
+            <LaneCard
+              style="swing"
+              title="Swing trading"
+              blurb="H4/Daily entries with wide ATR targets — positions ride for days to weeks."
+              timeframes={["H1", "H4", "D"]}
+              minInterval={30}
+              values={{
+                enabled: s.swingEnabled,
+                watchlist: s.swingWatchlist,
+                timeframe: s.swingTimeframe,
+                intervalMinutes: s.swingIntervalMinutes,
+                strategies: s.swingStrategies,
+                atrSlMult: s.swingAtrSlMult,
+                atrTpMult: s.swingAtrTpMult,
+                maxOpenTrades: s.swingMaxOpenTrades,
+              }}
+              onChange={(patch) =>
+                setS((prev) => ({
+                  ...prev,
+                  ...(patch.enabled != null && { swingEnabled: patch.enabled }),
+                  ...(patch.watchlist != null && {
+                    swingWatchlist: patch.watchlist,
+                  }),
+                  ...(patch.timeframe != null && {
+                    swingTimeframe: patch.timeframe,
+                  }),
+                  ...(patch.intervalMinutes != null && {
+                    swingIntervalMinutes: patch.intervalMinutes,
+                  }),
+                  ...(patch.strategies != null && {
+                    swingStrategies: patch.strategies,
+                  }),
+                  ...(patch.atrSlMult != null && {
+                    swingAtrSlMult: patch.atrSlMult,
+                  }),
+                  ...(patch.atrTpMult != null && {
+                    swingAtrTpMult: patch.atrTpMult,
+                  }),
+                  ...(patch.maxOpenTrades != null && {
+                    swingMaxOpenTrades: patch.maxOpenTrades,
+                  }),
+                }))
+              }
+            />
+          </div>
+          <p className="text-xs text-[var(--ink-soft)]">
+            The session filter (London/NY hours) applies to day trades only —
+            swing entries can trigger whenever their setup appears. Swing
+            trades are exempt because exits happen days later anyway.
+          </p>
         </section>
 
         {error && <p className="text-sm font-medium text-[var(--danger)]">{error}</p>}

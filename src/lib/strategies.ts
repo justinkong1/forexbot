@@ -14,7 +14,11 @@ export type StrategyId =
   | "ema_cross"
   | "rsi_reversion"
   | "macd_cross"
-  | "bb_bounce";
+  | "bb_bounce"
+  | "donchian_break"
+  | "htf_pullback";
+
+export type TradeStyle = "day" | "swing";
 
 export interface StrategySignal {
   id: StrategyId;
@@ -31,32 +35,59 @@ export const STRATEGY_CATALOG: Array<{
   id: StrategyId;
   name: string;
   summary: string;
+  styles: TradeStyle[];
 }> = [
   {
     id: "ema_cross",
     name: "EMA Cross + Trend",
     summary: "9/21 EMA crossover with EMA50 trend filter — classic trend entry",
+    styles: ["day", "swing"],
   },
   {
     id: "rsi_reversion",
     name: "RSI Pullback",
     summary: "RSI oversold/overbought bounce in direction of EMA50 trend",
+    styles: ["day"],
   },
   {
     id: "macd_cross",
     name: "MACD Momentum",
     summary: "MACD line crosses signal with histogram confirmation",
+    styles: ["day", "swing"],
   },
   {
     id: "bb_bounce",
     name: "Bollinger Bounce",
     summary: "Price tags outer Bollinger band with RSI confirmation",
+    styles: ["day"],
+  },
+  {
+    id: "donchian_break",
+    name: "Donchian Breakout",
+    summary:
+      "Close breaks the 20-bar high/low channel with EMA50 trend agreement — classic multi-day trend entry",
+    styles: ["swing"],
+  },
+  {
+    id: "htf_pullback",
+    name: "Trend Pullback",
+    summary:
+      "Established EMA21/EMA50 trend, price pulls back to EMA21 and resumes — buy-the-dip swing entry",
+    styles: ["swing"],
   },
 ];
 
-export const DEFAULT_ENABLED_STRATEGIES = STRATEGY_CATALOG.map((s) => s.id).join(
-  ",",
-);
+export const DEFAULT_ENABLED_STRATEGIES = STRATEGY_CATALOG.filter((s) =>
+  s.styles.includes("day"),
+)
+  .map((s) => s.id)
+  .join(",");
+
+export function strategiesForStyle(style: TradeStyle): StrategyId[] {
+  return STRATEGY_CATALOG.filter((s) => s.styles.includes(style)).map(
+    (s) => s.id,
+  );
+}
 
 function levelsFromAtr(
   instrument: string,
@@ -324,6 +355,138 @@ function evalBbBounce(
   return wait("bb_bounce", name, entry, "No Bollinger extreme + bounce confirmation");
 }
 
+const DONCHIAN_PERIOD = 20;
+
+function evalDonchianBreak(
+  instrument: string,
+  candles: Candle[],
+  atrVal: number,
+  slMult: number,
+  tpMult: number,
+): StrategySignal {
+  const name = "Donchian Breakout";
+  const c = closes(candles);
+  const entry = c[c.length - 1];
+  const i = candles.length - 1;
+  if (candles.length < DONCHIAN_PERIOD + 55) {
+    return wait(
+      "donchian_break",
+      name,
+      entry,
+      "Not enough bars for Donchian channel",
+    );
+  }
+  // Channel from the bars BEFORE the current one (no self-reference)
+  const window = candles.slice(i - DONCHIAN_PERIOD, i);
+  const channelHigh = Math.max(...window.map((b) => b.high));
+  const channelLow = Math.min(...window.map((b) => b.low));
+  const e50 = ema(c, 50);
+  const emaNow = e50[i];
+  if (emaNow == null) {
+    return wait("donchian_break", name, entry, "Not enough bars for EMA50");
+  }
+  const trendUp = entry > emaNow;
+  const trendDown = entry < emaNow;
+
+  if (entry > channelHigh && trendUp) {
+    const lv = levelsFromAtr(instrument, entry, "BUY", atrVal, slMult, tpMult);
+    return {
+      id: "donchian_break",
+      name,
+      bias: "BUY",
+      confidence: 0.7,
+      rationale: `Close broke above the ${DONCHIAN_PERIOD}-bar high (${channelHigh.toFixed(5)}) with EMA50 trend up — breakout continuation.`,
+      ...lv,
+      entry,
+    };
+  }
+  if (entry < channelLow && trendDown) {
+    const lv = levelsFromAtr(instrument, entry, "SELL", atrVal, slMult, tpMult);
+    return {
+      id: "donchian_break",
+      name,
+      bias: "SELL",
+      confidence: 0.7,
+      rationale: `Close broke below the ${DONCHIAN_PERIOD}-bar low (${channelLow.toFixed(5)}) with EMA50 trend down — breakdown continuation.`,
+      ...lv,
+      entry,
+    };
+  }
+  return wait(
+    "donchian_break",
+    name,
+    entry,
+    `Price inside the ${DONCHIAN_PERIOD}-bar channel — no breakout`,
+  );
+}
+
+function evalHtfPullback(
+  instrument: string,
+  candles: Candle[],
+  atrVal: number,
+  slMult: number,
+  tpMult: number,
+): StrategySignal {
+  const name = "Trend Pullback";
+  const c = closes(candles);
+  const entry = c[c.length - 1];
+  const i = c.length - 1;
+  const p = i - 1;
+  const e21 = ema(c, 21);
+  const e50 = ema(c, 50);
+  if (e21[i] == null || e50[i] == null || e21[p] == null) {
+    return wait("htf_pullback", name, entry, "Not enough bars for EMA21/EMA50");
+  }
+  const ema21Now = e21[i] as number;
+  const ema21Prev = e21[p] as number;
+  const ema50Now = e50[i] as number;
+  const uptrend = ema21Now > ema50Now && entry > ema50Now;
+  const downtrend = ema21Now < ema50Now && entry < ema50Now;
+  const prevBar = candles[p];
+
+  // Pullback tagged EMA21 on the prior bar, current bar resumes with the trend
+  if (
+    uptrend &&
+    prevBar.low <= ema21Prev &&
+    entry > ema21Now &&
+    entry > prevBar.close
+  ) {
+    const lv = levelsFromAtr(instrument, entry, "BUY", atrVal, slMult, tpMult);
+    return {
+      id: "htf_pullback",
+      name,
+      bias: "BUY",
+      confidence: 0.68,
+      rationale: `Uptrend (EMA21 > EMA50): price dipped to EMA21 and resumed higher — trend-continuation entry.`,
+      ...lv,
+      entry,
+    };
+  }
+  if (
+    downtrend &&
+    prevBar.high >= ema21Prev &&
+    entry < ema21Now &&
+    entry < prevBar.close
+  ) {
+    const lv = levelsFromAtr(instrument, entry, "SELL", atrVal, slMult, tpMult);
+    return {
+      id: "htf_pullback",
+      name,
+      bias: "SELL",
+      confidence: 0.68,
+      rationale: `Downtrend (EMA21 < EMA50): price rallied to EMA21 and resumed lower — trend-continuation entry.`,
+      ...lv,
+      entry,
+    };
+  }
+  return wait(
+    "htf_pullback",
+    name,
+    entry,
+    "No EMA21 pullback-and-resume in an established trend",
+  );
+}
+
 export interface StrategyScanResult {
   signals: StrategySignal[];
   consensus: StrategySignal | null;
@@ -371,6 +534,10 @@ export function scanStrategies(params: {
       evalMacdCross(params.instrument, params.candles, atrVal, slMult, tpMult),
     bb_bounce: () =>
       evalBbBounce(params.instrument, params.candles, atrVal, slMult, tpMult),
+    donchian_break: () =>
+      evalDonchianBreak(params.instrument, params.candles, atrVal, slMult, tpMult),
+    htf_pullback: () =>
+      evalHtfPullback(params.instrument, params.candles, atrVal, slMult, tpMult),
   };
 
   const signals = params.enabledIds
@@ -435,13 +602,17 @@ export function scanStrategies(params: {
   };
 }
 
-export function parseEnabledStrategies(csv: string | null | undefined): StrategyId[] {
+export function parseEnabledStrategies(
+  csv: string | null | undefined,
+  style?: TradeStyle,
+): StrategyId[] {
   const all = STRATEGY_CATALOG.map((s) => s.id);
-  if (!csv || !csv.trim()) return all;
+  const fallback = style ? strategiesForStyle(style) : all;
+  if (!csv || !csv.trim()) return fallback;
   const wanted = csv
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean) as StrategyId[];
   const valid = wanted.filter((id) => all.includes(id));
-  return valid.length ? valid : all;
+  return valid.length ? valid : fallback;
 }

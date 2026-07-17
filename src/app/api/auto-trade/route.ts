@@ -6,11 +6,21 @@ import {
 } from "@/lib/auto-trade";
 import { getOrCreateSettings, prisma } from "@/lib/db";
 import { apiError } from "@/lib/api-error";
+import { laneConfig } from "@/lib/execute";
 
 export async function GET() {
   try {
     ensureAutoTradeWorker();
     const settings = await getOrCreateSettings();
+    const day = laneConfig(settings, "day");
+    const swing = laneConfig(settings, "swing");
+    const openByStyle = await prisma.tradeJournal.groupBy({
+      by: ["style"],
+      where: { outcome: "open" },
+      _count: { _all: true },
+    });
+    const openCount = (style: string) =>
+      openByStyle.find((r) => r.style === style)?._count._all ?? 0;
     return NextResponse.json({
       enabled: settings.autoTradeEnabled,
       watchlist: settings.autoWatchlist,
@@ -18,6 +28,24 @@ export async function GET() {
       intervalMinutes: settings.autoIntervalMinutes,
       minConfidence: settings.autoMinConfidence,
       runtime: getAutoTradeRuntime(),
+      lanes: {
+        day: {
+          enabled: day.enabled,
+          timeframe: day.timeframe,
+          intervalMinutes: day.intervalMinutes,
+          watchlist: day.watchlist,
+          maxOpenTrades: day.maxOpenTrades,
+          openTrades: openCount("day"),
+        },
+        swing: {
+          enabled: swing.enabled,
+          timeframe: swing.timeframe,
+          intervalMinutes: swing.intervalMinutes,
+          watchlist: swing.watchlist,
+          maxOpenTrades: swing.maxOpenTrades,
+          openTrades: openCount("swing"),
+        },
+      },
     });
   } catch (e) {
     return apiError(e, "Failed to load auto-trade status");

@@ -15,6 +15,7 @@ import {
   parseEnabledStrategies,
   scanStrategies,
   type StrategySignal,
+  type TradeStyle,
 } from "./strategies";
 import { checkHtfTrend, runEntryFilters } from "./filters";
 import {
@@ -42,8 +43,93 @@ export interface ExecuteTradeInput {
   rationale?: string;
   entryPrice?: number;
   strategyId?: string;
+  /** Day trade (intraday) or swing trade (held days–weeks) */
+  style?: TradeStyle;
   /** Skip session/correlation/volatility filters (manual override) */
   skipFilters?: boolean;
+}
+
+export interface LaneConfig {
+  style: TradeStyle;
+  enabled: boolean;
+  watchlist: string[];
+  timeframe: CandleGranularity;
+  intervalMinutes: number;
+  strategiesCsv: string;
+  atrSlMult: number;
+  atrTpMult: number;
+  maxOpenTrades: number;
+  candleCount: number;
+}
+
+type LaneSettings = {
+  dayEnabled: boolean;
+  dayWatchlist: string;
+  dayTimeframe: string;
+  dayIntervalMinutes: number;
+  dayStrategies: string;
+  dayAtrSlMult: number;
+  dayAtrTpMult: number;
+  dayMaxOpenTrades: number;
+  swingEnabled: boolean;
+  swingWatchlist: string;
+  swingTimeframe: string;
+  swingIntervalMinutes: number;
+  swingStrategies: string;
+  swingAtrSlMult: number;
+  swingAtrTpMult: number;
+  swingMaxOpenTrades: number;
+};
+
+/** Effective total-open-trades ceiling: never below what enabled lanes need */
+export function effectiveMaxOpenTrades(settings: {
+  maxOpenTrades: number;
+  dayEnabled: boolean;
+  dayMaxOpenTrades: number;
+  swingEnabled: boolean;
+  swingMaxOpenTrades: number;
+}): number {
+  const laneSum =
+    (settings.dayEnabled ? settings.dayMaxOpenTrades : 0) +
+    (settings.swingEnabled ? settings.swingMaxOpenTrades : 0);
+  return Math.max(settings.maxOpenTrades, laneSum);
+}
+
+export function laneConfig(
+  settings: LaneSettings,
+  style: TradeStyle,
+): LaneConfig {
+  const parseList = (csv: string) =>
+    csv
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  if (style === "swing") {
+    return {
+      style,
+      enabled: settings.swingEnabled,
+      watchlist: parseList(settings.swingWatchlist),
+      timeframe: (settings.swingTimeframe || "H4") as CandleGranularity,
+      intervalMinutes: settings.swingIntervalMinutes,
+      strategiesCsv: settings.swingStrategies,
+      atrSlMult: settings.swingAtrSlMult,
+      atrTpMult: settings.swingAtrTpMult,
+      maxOpenTrades: settings.swingMaxOpenTrades,
+      candleCount: 250,
+    };
+  }
+  return {
+    style: "day",
+    enabled: settings.dayEnabled,
+    watchlist: parseList(settings.dayWatchlist),
+    timeframe: (settings.dayTimeframe || "M15") as CandleGranularity,
+    intervalMinutes: settings.dayIntervalMinutes,
+    strategiesCsv: settings.dayStrategies,
+    atrSlMult: settings.dayAtrSlMult,
+    atrTpMult: settings.dayAtrTpMult,
+    maxOpenTrades: settings.dayMaxOpenTrades,
+    candleCount: 120,
+  };
 }
 
 async function resolveUnits(params: {
@@ -223,6 +309,7 @@ export async function analyzeInstrument(params: {
 const HIGHER_TF_MAP: Record<string, CandleGranularity> = {
   M5: "M15",
   M15: "H1",
+  M30: "H4",
   H1: "H4",
   H4: "D",
   D: "D",
@@ -232,14 +319,23 @@ export async function analyzeStrategies(params: {
   instrument: string;
   timeframe: CandleGranularity;
   excludeStrategyIds?: string[];
+  style?: TradeStyle;
 }) {
   const { oanda, settings } = await loadCredentials();
   if (!oanda) throw new Error("OANDA credentials not configured");
 
-  const candles = await getCandles(oanda, params.instrument, params.timeframe, 120);
+  const style: TradeStyle = params.style ?? "day";
+  const lane = laneConfig(settings, style);
+
+  const candles = await getCandles(
+    oanda,
+    params.instrument,
+    params.timeframe,
+    lane.candleCount,
+  );
   const account = await getAccountSummary(oanda);
   const balance = parseFloat(String(account.balance ?? account.NAV ?? 0));
-  let enabled = parseEnabledStrategies(settings.enabledStrategies);
+  let enabled = parseEnabledStrategies(lane.strategiesCsv, style);
   if (params.excludeStrategyIds?.length) {
     enabled = enabled.filter(
       (id) => !params.excludeStrategyIds!.includes(id),
@@ -250,8 +346,8 @@ export async function analyzeStrategies(params: {
     candles,
     enabledIds: enabled,
     minVotes: settings.strategyMinVotes,
-    atrSlMult: settings.atrSlMult,
-    atrTpMult: settings.atrTpMult,
+    atrSlMult: lane.atrSlMult,
+    atrTpMult: lane.atrTpMult,
   });
 
   // Higher-timeframe trend veto (Settings toggle)
@@ -317,6 +413,7 @@ export async function analyzeStrategies(params: {
     sizingMode,
     htfVeto,
     candles,
+    style,
   };
 }
 
@@ -335,10 +432,11 @@ export async function executeTrade(input: ExecuteTradeInput) {
     throw new Error(`Open position already exists on ${input.instrument}`);
   }
 
+  const maxOpen = effectiveMaxOpenTrades(settings);
   const openTrades = await getOpenTrades(oanda);
-  if (openTrades.length >= settings.maxOpenTrades) {
+  if (openTrades.length >= maxOpen) {
     throw new Error(
-      `Max open trades reached (${settings.maxOpenTrades})`,
+      `Max open trades reached (${maxOpen})`,
     );
   }
 
@@ -353,7 +451,9 @@ export async function executeTrade(input: ExecuteTradeInput) {
       instrument: input.instrument,
       candles: filterCandles,
       openInstruments: openTrades.map((t) => t.instrument),
-      sessionFilterEnabled: settings.sessionFilterEnabled,
+      // Swing entries aren't time-of-day sensitive — session filter is day-only
+      sessionFilterEnabled:
+        settings.sessionFilterEnabled && input.style !== "swing",
     });
     if (!filterResult.ok) {
       throw new Error(filterResult.reason || "Blocked by entry filter");
@@ -430,6 +530,7 @@ export async function executeTrade(input: ExecuteTradeInput) {
         oandaTradeId: tradeId || null,
         timeframe: input.timeframe,
         strategyId: input.strategyId ?? null,
+        style: input.style ?? null,
       },
     });
 
@@ -463,6 +564,7 @@ export async function executeTrade(input: ExecuteTradeInput) {
       rr,
       balance,
       sizingMode: settings.sizingMode,
+      style: input.style ?? null,
     });
 
     return { journal, result, fillPrice, units };
@@ -482,6 +584,7 @@ export async function executeTrade(input: ExecuteTradeInput) {
         timeframe: input.timeframe,
         skipReason: msg,
         strategyId: input.strategyId ?? null,
+        style: input.style ?? null,
       },
     });
     throw e;
@@ -495,6 +598,7 @@ export async function recordSkip(params: {
   signal?: TradeSignal | StrategySignal | null;
   reason: string;
   strategyId?: string | null;
+  style?: TradeStyle | null;
 }) {
   const bias = params.signal?.bias;
   const signalStrategyId =
@@ -512,6 +616,7 @@ export async function recordSkip(params: {
       stopLoss: params.signal?.stopLoss ?? null,
       skipReason: params.reason,
       strategyId: params.strategyId ?? signalStrategyId,
+      style: params.style ?? null,
     },
   });
 }
