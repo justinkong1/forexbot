@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { readJson } from "@/lib/http";
+import { outcomeMoney } from "@/lib/risk";
 
 interface Trade {
   id: string;
@@ -12,6 +13,11 @@ interface Trade {
   openTime: string;
   takeProfitOrder?: { price: string };
   stopLossOrder?: { price: string };
+}
+
+function moneyLabel(n: number | null, sign: "+" | "−"): string {
+  if (n == null) return "—";
+  return `${sign}${n.toFixed(2)}`;
 }
 
 export default function PositionsPage() {
@@ -94,7 +100,7 @@ export default function PositionsPage() {
       )}
 
       <div className="overflow-x-auto panel">
-        <table className="w-full min-w-[720px] text-left text-sm">
+        <table className="w-full min-w-[860px] text-left text-sm">
           <thead className="border-b border-[var(--line)] text-xs uppercase tracking-wider text-[var(--ink-soft)]">
             <tr>
               <th className="p-3">Instrument</th>
@@ -103,34 +109,64 @@ export default function PositionsPage() {
               <th className="p-3">uPL</th>
               <th className="p-3">TP</th>
               <th className="p-3">SL</th>
+              <th className="p-3">You make</th>
+              <th className="p-3">You lose</th>
               <th className="p-3">Opened</th>
               <th className="p-3">Discord</th>
             </tr>
           </thead>
           <tbody>
-            {trades.map((t) => (
-              <tr key={t.id} className="border-b border-[var(--line)] last:border-0">
-                <td className="p-3 mono font-semibold">{t.instrument}</td>
-                <td className="p-3 mono">{t.currentUnits}</td>
-                <td className="p-3 mono">{t.price}</td>
-                <td className="p-3 mono">{t.unrealizedPL}</td>
-                <td className="p-3 mono">{t.takeProfitOrder?.price ?? "—"}</td>
-                <td className="p-3 mono">{t.stopLossOrder?.price ?? "—"}</td>
-                <td className="p-3 text-[var(--ink-soft)]">
-                  {new Date(t.openTime).toLocaleString()}
-                </td>
-                <td className="p-3">
-                  <button
-                    type="button"
-                    className="btn btn-ghost text-xs"
-                    disabled={sendingId != null}
-                    onClick={() => void sendStatus(t.id)}
-                  >
-                    {sendingId === t.id ? "…" : "Share"}
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {trades.map((t) => {
+              const entry = Number(t.price);
+              const units = Number(t.currentUnits);
+              const tp = t.takeProfitOrder?.price
+                ? Number(t.takeProfitOrder.price)
+                : null;
+              const sl = t.stopLossOrder?.price
+                ? Number(t.stopLossOrder.price)
+                : null;
+              const side: "BUY" | "SELL" = units < 0 ? "SELL" : "BUY";
+              const outcomes =
+                Number.isFinite(entry) && Number.isFinite(units) && units !== 0
+                  ? outcomeMoney({
+                      units,
+                      entry,
+                      takeProfit: tp != null && Number.isFinite(tp) ? tp : null,
+                      stopLoss: sl != null && Number.isFinite(sl) ? sl : null,
+                      side,
+                    })
+                  : { youMake: null, youLose: null, rr: null };
+
+              return (
+                <tr key={t.id} className="border-b border-[var(--line)] last:border-0">
+                  <td className="p-3 mono font-semibold">{t.instrument}</td>
+                  <td className="p-3 mono">{t.currentUnits}</td>
+                  <td className="p-3 mono">{t.price}</td>
+                  <td className="p-3 mono">{t.unrealizedPL}</td>
+                  <td className="p-3 mono">{t.takeProfitOrder?.price ?? "—"}</td>
+                  <td className="p-3 mono">{t.stopLossOrder?.price ?? "—"}</td>
+                  <td className="p-3 mono font-semibold text-[var(--ok)]">
+                    {moneyLabel(outcomes.youMake, "+")}
+                  </td>
+                  <td className="p-3 mono font-semibold text-[var(--danger)]">
+                    {moneyLabel(outcomes.youLose, "−")}
+                  </td>
+                  <td className="p-3 text-[var(--ink-soft)]">
+                    {new Date(t.openTime).toLocaleString()}
+                  </td>
+                  <td className="p-3">
+                    <button
+                      type="button"
+                      className="btn btn-ghost text-xs"
+                      disabled={sendingId != null}
+                      onClick={() => void sendStatus(t.id)}
+                    >
+                      {sendingId === t.id ? "…" : "Share"}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

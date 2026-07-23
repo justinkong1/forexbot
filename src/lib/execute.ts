@@ -6,6 +6,7 @@ import {
   calculateFullBalanceUnits,
   calculateUnits,
   plannedRiskAmount,
+  plannedRewardAmount,
   riskRewardRatio,
   validateTpSl,
   type SizingMode,
@@ -540,6 +541,11 @@ export async function executeTrade(input: ExecuteTradeInput) {
       fillPrice,
       input.stopLoss,
     );
+    const rewardAmt = plannedRewardAmount(
+      Math.abs(units),
+      fillPrice,
+      input.takeProfit,
+    );
     const rr = riskRewardRatio(
       fillPrice,
       input.takeProfit,
@@ -561,6 +567,7 @@ export async function executeTrade(input: ExecuteTradeInput) {
       oandaTradeId: tradeId || null,
       oandaOrderId: fill?.id || result.orderCreateTransaction?.id || null,
       riskAmount: riskAmt,
+      rewardAmount: rewardAmt,
       rr,
       balance,
       sizingMode: settings.sizingMode,

@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { CandleChart, type ChartCandle } from "@/components/CandleChart";
 import { readJson } from "@/lib/http";
+import { outcomeMoney } from "@/lib/risk";
 
 interface Instrument {
   name: string;
@@ -71,6 +72,21 @@ export default function TradePage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [halted, setHalted] = useState(false);
   const [haltMsg, setHaltMsg] = useState<string | null>(null);
+
+  const liveOutcomes = useMemo(() => {
+    if (!pending || pending.signal.bias === "WAIT") return null;
+    const u = Number(units);
+    const tpN = Number(tp);
+    const slN = Number(sl);
+    if (!Number.isFinite(u) || u === 0) return null;
+    return outcomeMoney({
+      units: u,
+      entry: pending.entry,
+      takeProfit: Number.isFinite(tpN) ? tpN : null,
+      stopLoss: Number.isFinite(slN) ? slN : null,
+      side: pending.signal.bias,
+    });
+  }, [pending, units, tp, sl]);
 
   const loadInstruments = useCallback(async () => {
     const res = await fetch("/api/oanda/instruments");
@@ -433,20 +449,6 @@ export default function TradePage() {
                 <div className="label">Last close</div>
                 <div className="mono">{pending.lastClose}</div>
               </div>
-              <div>
-                <div className="label">Suggested R:R</div>
-                <div className="mono">
-                  {pending.rr != null ? pending.rr.toFixed(2) : "—"}
-                </div>
-              </div>
-              <div>
-                <div className="label">$ at SL</div>
-                <div className="mono">
-                  {pending.riskAmount != null
-                    ? pending.riskAmount.toFixed(2)
-                    : "—"}
-                </div>
-              </div>
               {pending.suggestedUnits != null && (
                 <div className="col-span-2">
                   <div className="label">Suggested units (from sizing mode)</div>
@@ -492,6 +494,35 @@ export default function TradePage() {
                     />
                   </div>
                 </div>
+                <div className="grid grid-cols-3 gap-3 border-t border-[var(--line)] pt-3 text-sm">
+                  <div>
+                    <div className="label">You make</div>
+                    <div className="mono text-lg font-semibold text-[var(--ok)]">
+                      {liveOutcomes?.youMake != null
+                        ? `+${liveOutcomes.youMake.toFixed(2)}`
+                        : "—"}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="label">You lose</div>
+                    <div className="mono text-lg font-semibold text-[var(--danger)]">
+                      {liveOutcomes?.youLose != null
+                        ? `−${liveOutcomes.youLose.toFixed(2)}`
+                        : "—"}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="label">R:R</div>
+                    <div className="mono text-lg font-semibold">
+                      {liveOutcomes?.rr != null
+                        ? liveOutcomes.rr.toFixed(2)
+                        : "—"}
+                    </div>
+                  </div>
+                </div>
+                <p className="text-xs text-[var(--ink-soft)]">
+                  Estimated account currency if TP or SL fills at those prices.
+                </p>
                 <button
                   type="button"
                   className="btn btn-primary w-full"

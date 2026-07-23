@@ -125,3 +125,59 @@ export function plannedRiskAmount(
 ): number {
   return Math.abs(units) * Math.abs(entry - stopLoss);
 }
+
+/** Estimated money made if take-profit fills at that price. */
+export function plannedRewardAmount(
+  units: number,
+  entry: number,
+  takeProfit: number,
+): number {
+  return Math.abs(units) * Math.abs(takeProfit - entry);
+}
+
+/**
+ * Plain-language money outcomes for a planned (or open) trade.
+ * youMake = if TP hits; youLose = if SL hits (always positive magnitudes).
+ */
+export function outcomeMoney(params: {
+  units: number;
+  entry: number;
+  takeProfit: number | null | undefined;
+  stopLoss: number | null | undefined;
+  side?: "BUY" | "SELL";
+}): {
+  youMake: number | null;
+  youLose: number | null;
+  rr: number | null;
+} {
+  const units = Math.abs(params.units);
+  if (units <= 0 || params.entry <= 0) {
+    return { youMake: null, youLose: null, rr: null };
+  }
+  const youMake =
+    params.takeProfit != null && Number.isFinite(params.takeProfit)
+      ? plannedRewardAmount(units, params.entry, params.takeProfit)
+      : null;
+  const youLose =
+    params.stopLoss != null && Number.isFinite(params.stopLoss)
+      ? plannedRiskAmount(units, params.entry, params.stopLoss)
+      : null;
+  let rr: number | null = null;
+  if (
+    params.side &&
+    params.takeProfit != null &&
+    params.stopLoss != null &&
+    Number.isFinite(params.takeProfit) &&
+    Number.isFinite(params.stopLoss)
+  ) {
+    rr = riskRewardRatio(
+      params.entry,
+      params.takeProfit,
+      params.stopLoss,
+      params.side,
+    );
+  } else if (youMake != null && youLose != null && youLose > 0) {
+    rr = youMake / youLose;
+  }
+  return { youMake, youLose, rr };
+}

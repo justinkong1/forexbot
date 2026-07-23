@@ -112,6 +112,7 @@ export async function notifyTradeOpened(
     oandaTradeId?: string | null;
     oandaOrderId?: string | null;
     riskAmount?: number | null;
+    rewardAmount?: number | null;
     rr?: number | null;
     balance?: number | null;
     sizingMode?: string | null;
@@ -147,8 +148,14 @@ export async function notifyTradeOpened(
   if (trade.rr != null) {
     fields.push({ name: "R:R", value: trade.rr.toFixed(2) });
   }
+  if (trade.rewardAmount != null) {
+    fields.push({ name: "You make", value: fmtMoney(trade.rewardAmount) });
+  }
   if (trade.riskAmount != null) {
-    fields.push({ name: "$ at SL", value: fmtMoney(trade.riskAmount) });
+    fields.push({
+      name: "You lose",
+      value: fmtMoney(-Math.abs(trade.riskAmount)),
+    });
   }
   if (trade.balance != null) {
     fields.push({ name: "Balance (pre)", value: fmtMoney(trade.balance) });
