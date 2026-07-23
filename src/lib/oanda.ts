@@ -239,6 +239,62 @@ export async function placeMarketOrder(
   return data;
 }
 
+/**
+ * Replace (or set) take-profit / stop-loss dependent orders on an open trade.
+ * Omit a field to leave that exit unchanged.
+ */
+export async function updateTradeExits(
+  creds: OandaCredentials,
+  tradeId: string,
+  params: {
+    takeProfit?: number;
+    stopLoss?: number;
+    instrument: string;
+  },
+) {
+  const precision = params.instrument.includes("JPY") ? 3 : 5;
+  const body: Record<string, unknown> = {};
+  if (params.takeProfit != null) {
+    body.takeProfit = {
+      price: params.takeProfit.toFixed(precision),
+      timeInForce: "GTC",
+    };
+  }
+  if (params.stopLoss != null) {
+    body.stopLoss = {
+      price: params.stopLoss.toFixed(precision),
+      timeInForce: "GTC",
+    };
+  }
+  if (!Object.keys(body).length) {
+    throw new Error("Nothing to update — provide takeProfit and/or stopLoss");
+  }
+
+  const data = (await oandaFetch(
+    creds,
+    `/v3/accounts/${creds.accountId}/trades/${encodeURIComponent(tradeId)}/orders`,
+    { method: "PUT", body: JSON.stringify(body) },
+  )) as {
+    takeProfitOrderCancelTransaction?: { id?: string };
+    takeProfitOrderTransaction?: { id?: string; price?: string };
+    takeProfitOrderFillTransaction?: { id?: string };
+    takeProfitOrderCreatedCancelTransaction?: { id?: string };
+    stopLossOrderCancelTransaction?: { id?: string };
+    stopLossOrderTransaction?: { id?: string; price?: string };
+    stopLossOrderFillTransaction?: { id?: string };
+    stopLossOrderCreatedCancelTransaction?: { id?: string };
+    orderRejectTransaction?: { rejectReason?: string };
+  };
+
+  if (data.orderRejectTransaction) {
+    throw new Error(
+      data.orderRejectTransaction.rejectReason || "Exit order rejected",
+    );
+  }
+
+  return data;
+}
+
 export async function getClosedTradesSince(
   creds: OandaCredentials,
   sinceIso: string,

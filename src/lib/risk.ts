@@ -2,6 +2,8 @@
  * Position sizing helpers for OANDA FX.
  */
 
+import { roundPrice } from "./indicators";
+
 export type SizingMode = "risk_sl" | "full_balance";
 
 /**
@@ -180,4 +182,40 @@ export function outcomeMoney(params: {
     rr = youMake / youLose;
   }
   return { youMake, youLose, rr };
+}
+
+function instrumentFromUnknown(instrument?: string): string {
+  return instrument || "EUR_USD";
+}
+
+/** Convert a desired "You make" dollar amount into a take-profit price. */
+export function priceFromReward(params: {
+  side: "BUY" | "SELL";
+  entry: number;
+  units: number;
+  youMake: number;
+  instrument?: string;
+}): number | null {
+  const units = Math.abs(params.units);
+  if (units <= 0 || params.entry <= 0 || params.youMake <= 0) return null;
+  const dist = params.youMake / units;
+  const raw =
+    params.side === "BUY" ? params.entry + dist : params.entry - dist;
+  return roundPrice(raw, instrumentFromUnknown(params.instrument));
+}
+
+/** Convert a desired "You lose" dollar amount into a stop-loss price. */
+export function priceFromRisk(params: {
+  side: "BUY" | "SELL";
+  entry: number;
+  units: number;
+  youLose: number;
+  instrument?: string;
+}): number | null {
+  const units = Math.abs(params.units);
+  if (units <= 0 || params.entry <= 0 || params.youLose <= 0) return null;
+  const dist = params.youLose / units;
+  const raw =
+    params.side === "BUY" ? params.entry - dist : params.entry + dist;
+  return roundPrice(raw, instrumentFromUnknown(params.instrument));
 }
