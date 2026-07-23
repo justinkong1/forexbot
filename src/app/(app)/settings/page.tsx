@@ -68,8 +68,6 @@ interface LaneValues {
   timeframe: string;
   intervalMinutes: number;
   strategies: string;
-  atrSlMult: number;
-  atrTpMult: number;
   maxOpenTrades: number;
 }
 
@@ -166,27 +164,9 @@ function LaneCard(props: {
           />
         </div>
       </div>
-      <div className="grid gap-4 md:grid-cols-2">
-        <div>
-          <label className="label">ATR SL mult</label>
-          <input
-            className="input mono"
-            type="number"
-            step="0.1"
-            value={values.atrSlMult}
-            onChange={(e) => onChange({ atrSlMult: Number(e.target.value) })}
-          />
-        </div>
-        <div>
-          <label className="label">ATR TP mult</label>
-          <input
-            className="input mono"
-            type="number"
-            step="0.1"
-            value={values.atrTpMult}
-            onChange={(e) => onChange({ atrTpMult: Number(e.target.value) })}
-          />
-        </div>
+      <div className="rounded-md border border-[var(--line)] bg-[var(--panel-solid)] px-3 py-2 text-xs text-[var(--ink-soft)]">
+        Exits are chosen by the strategy from market structure. Your risk % and
+        min R:R still control size and quality.
       </div>
       <div>
         <label className="label">Strategies</label>
@@ -971,7 +951,7 @@ export default function SettingsPage() {
             <LaneCard
               style="day"
               title="Day trading"
-              blurb="Fast timeframes, tight ATR targets — trades usually resolve within hours."
+              blurb="Fast timeframes with structure-based exits — trades usually resolve within hours."
               timeframes={["M5", "M15", "M30", "H1"]}
               minInterval={5}
               values={{
@@ -980,8 +960,6 @@ export default function SettingsPage() {
                 timeframe: s.dayTimeframe,
                 intervalMinutes: s.dayIntervalMinutes,
                 strategies: s.dayStrategies,
-                atrSlMult: s.dayAtrSlMult,
-                atrTpMult: s.dayAtrTpMult,
                 maxOpenTrades: s.dayMaxOpenTrades,
               }}
               onChange={(patch) =>
@@ -1000,12 +978,6 @@ export default function SettingsPage() {
                   ...(patch.strategies != null && {
                     dayStrategies: patch.strategies,
                   }),
-                  ...(patch.atrSlMult != null && {
-                    dayAtrSlMult: patch.atrSlMult,
-                  }),
-                  ...(patch.atrTpMult != null && {
-                    dayAtrTpMult: patch.atrTpMult,
-                  }),
                   ...(patch.maxOpenTrades != null && {
                     dayMaxOpenTrades: patch.maxOpenTrades,
                   }),
@@ -1015,7 +987,7 @@ export default function SettingsPage() {
             <LaneCard
               style="swing"
               title="Swing trading"
-              blurb="H4/Daily entries with wide ATR targets — positions ride for days to weeks."
+              blurb="H4/Daily entries with structure-based exits — positions ride for days to weeks."
               timeframes={["H1", "H4", "D"]}
               minInterval={30}
               values={{
@@ -1024,8 +996,6 @@ export default function SettingsPage() {
                 timeframe: s.swingTimeframe,
                 intervalMinutes: s.swingIntervalMinutes,
                 strategies: s.swingStrategies,
-                atrSlMult: s.swingAtrSlMult,
-                atrTpMult: s.swingAtrTpMult,
                 maxOpenTrades: s.swingMaxOpenTrades,
               }}
               onChange={(patch) =>
@@ -1043,12 +1013,6 @@ export default function SettingsPage() {
                   }),
                   ...(patch.strategies != null && {
                     swingStrategies: patch.strategies,
-                  }),
-                  ...(patch.atrSlMult != null && {
-                    swingAtrSlMult: patch.atrSlMult,
-                  }),
-                  ...(patch.atrTpMult != null && {
-                    swingAtrTpMult: patch.atrTpMult,
                   }),
                   ...(patch.maxOpenTrades != null && {
                     swingMaxOpenTrades: patch.maxOpenTrades,

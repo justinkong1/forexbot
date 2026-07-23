@@ -53,11 +53,21 @@ export async function analyzePair(params: {
   higherTfCandles?: Candle[];
   accountBalance?: number;
   model?: string | null;
+  /** Day = intraday structure; swing = multi-day structure */
+  style?: "day" | "swing";
+  /** Minimum reward/risk the bot will accept */
+  minRr?: number;
 }): Promise<TradeSignal> {
   const { apiKey, instrument, timeframe, candles, higherTfCandles, accountBalance } =
     params;
   const ai = new GoogleGenAI({ apiKey });
   const model = resolveModel(params.model);
+  const style = params.style ?? "day";
+  const minRr = Math.max(0.5, params.minRr ?? 1.5);
+  const horizon =
+    style === "swing"
+      ? "SWING trade (hold days to weeks). Use wider recent swings (~20 bars) and next liquidity/structure as targets."
+      : "DAY trade (intraday). Use tight recent swings (~10 bars) and nearby structure; targets should be reachable the same session.";
 
   const summarize = (cs: Candle[], n = 40) =>
     cs.slice(-n).map((c) => ({
@@ -73,8 +83,10 @@ export async function analyzePair(params: {
   const prompt = `You are a cautious forex trading analyst for OANDA market orders.
 Instrument: ${instrument}
 Primary timeframe: ${timeframe}
+Trade style: ${style.toUpperCase()} — ${horizon}
 Latest close: ${last?.close ?? "n/a"}
 Account balance (approx): ${accountBalance ?? "unknown"}
+Minimum risk/reward required: ${minRr}
 
 Primary candles (most recent last):
 ${JSON.stringify(summarize(candles))}
@@ -87,14 +99,19 @@ ${
 
 Decide BUY, SELL, or WAIT for a market entry NOW.
 If BUY/SELL, provide absolute takeProfit and stopLoss prices suitable for this pair
-(JPY pairs typically 2-3 decimal places; others ~5). Prefer at least 1:1 risk/reward.
-Prefer WAIT if unclear or choppy.
+(JPY pairs typically 2-3 decimal places; others ~5).
+
+Exit rules (structure-based — do NOT invent fixed pip/ATR multiples):
+- stopLoss: beyond the recent swing / invalidation that would prove the setup wrong (just past that high/low).
+- takeProfit: at the next opposing swing, clear liquidity pool, or obvious structure level in the trade direction.
+- Reward distance must be at least ${minRr}× the risk distance from entryHint (or latest close) to stopLoss.
+- Prefer WAIT if unclear, choppy, or you cannot place structure exits that clear min R:R.
 
 Respond ONLY with JSON:
 {
   "bias": "BUY" | "SELL" | "WAIT",
   "confidence": number between 0 and 1,
-  "rationale": "short explanation",
+  "rationale": "short explanation naming the structure used for TP/SL",
   "takeProfit": number or null,
   "stopLoss": number or null,
   "entryHint": number or null

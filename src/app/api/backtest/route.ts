@@ -29,8 +29,8 @@ export async function POST(req: NextRequest) {
       instrument,
       timeframe,
       strategyIds,
-      atrSlMult: lane.atrSlMult,
-      atrTpMult: lane.atrTpMult,
+      style,
+      minRr: settings.minRiskReward,
       barCount: body.bars ? Number(body.bars) : 500,
     });
 

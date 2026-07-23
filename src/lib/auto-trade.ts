@@ -227,6 +227,7 @@ async function runLane(style: TradeStyle) {
           const analysis = await analyzeInstrument({
             instrument,
             timeframe: lane.timeframe,
+            style,
           });
           const { signal } = analysis;
 

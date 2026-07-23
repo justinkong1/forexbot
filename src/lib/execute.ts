@@ -57,8 +57,6 @@ export interface LaneConfig {
   timeframe: CandleGranularity;
   intervalMinutes: number;
   strategiesCsv: string;
-  atrSlMult: number;
-  atrTpMult: number;
   maxOpenTrades: number;
   candleCount: number;
 }
@@ -69,16 +67,12 @@ type LaneSettings = {
   dayTimeframe: string;
   dayIntervalMinutes: number;
   dayStrategies: string;
-  dayAtrSlMult: number;
-  dayAtrTpMult: number;
   dayMaxOpenTrades: number;
   swingEnabled: boolean;
   swingWatchlist: string;
   swingTimeframe: string;
   swingIntervalMinutes: number;
   swingStrategies: string;
-  swingAtrSlMult: number;
-  swingAtrTpMult: number;
   swingMaxOpenTrades: number;
 };
 
@@ -113,8 +107,6 @@ export function laneConfig(
       timeframe: (settings.swingTimeframe || "H4") as CandleGranularity,
       intervalMinutes: settings.swingIntervalMinutes,
       strategiesCsv: settings.swingStrategies,
-      atrSlMult: settings.swingAtrSlMult,
-      atrTpMult: settings.swingAtrTpMult,
       maxOpenTrades: settings.swingMaxOpenTrades,
       candleCount: 250,
     };
@@ -126,8 +118,6 @@ export function laneConfig(
     timeframe: (settings.dayTimeframe || "M15") as CandleGranularity,
     intervalMinutes: settings.dayIntervalMinutes,
     strategiesCsv: settings.dayStrategies,
-    atrSlMult: settings.dayAtrSlMult,
-    atrTpMult: settings.dayAtrTpMult,
     maxOpenTrades: settings.dayMaxOpenTrades,
     candleCount: 120,
   };
@@ -230,11 +220,13 @@ function sizeFromSignalSync(params: {
 export async function analyzeInstrument(params: {
   instrument: string;
   timeframe: CandleGranularity;
+  style?: TradeStyle;
 }) {
   const { oanda, geminiKey, settings } = await loadCredentials();
   if (!oanda) throw new Error("OANDA credentials not configured");
   if (!geminiKey) throw new Error("Gemini API key not configured");
 
+  const style: TradeStyle = params.style ?? "day";
   const candles = await getCandles(oanda, params.instrument, params.timeframe, 100);
   const higherMap: Record<string, CandleGranularity> = {
     M5: "M15",
@@ -260,6 +252,8 @@ export async function analyzeInstrument(params: {
     higherTfCandles,
     accountBalance: balance,
     model: settings.geminiModel,
+    style,
+    minRr: settings.minRiskReward,
   });
 
   const lastClose = candles[candles.length - 1]?.close ?? 0;
@@ -347,8 +341,8 @@ export async function analyzeStrategies(params: {
     candles,
     enabledIds: enabled,
     minVotes: settings.strategyMinVotes,
-    atrSlMult: lane.atrSlMult,
-    atrTpMult: lane.atrTpMult,
+    style,
+    minRr: settings.minRiskReward,
   });
 
   // Higher-timeframe trend veto (Settings toggle)

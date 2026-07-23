@@ -4,6 +4,7 @@ import {
   scanStrategies,
   STRATEGY_CATALOG,
   type StrategyId,
+  type TradeStyle,
 } from "./strategies";
 
 export interface BacktestTrade {
@@ -71,8 +72,8 @@ export async function runBacktest(params: {
   instrument: string;
   timeframe: CandleGranularity;
   strategyIds: StrategyId[];
-  atrSlMult: number;
-  atrTpMult: number;
+  style?: TradeStyle;
+  minRr?: number;
   barCount?: number;
 }): Promise<BacktestResult> {
   const count = Math.min(500, Math.max(120, params.barCount ?? 500));
@@ -82,6 +83,8 @@ export async function runBacktest(params: {
     params.timeframe,
     count,
   );
+  const style = params.style ?? "day";
+  const minRr = params.minRr ?? 1.5;
 
   const trades: BacktestTrade[] = [];
   // Track an open simulated trade per strategy so we don't overlap entries
@@ -94,8 +97,8 @@ export async function runBacktest(params: {
       candles: window,
       enabledIds: params.strategyIds,
       minVotes: 1, // evaluate each strategy on its own merits
-      atrSlMult: params.atrSlMult,
-      atrTpMult: params.atrTpMult,
+      style,
+      minRr,
     });
 
     for (const signal of scan.signals) {
